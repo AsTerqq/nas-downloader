@@ -830,7 +830,7 @@ async function doUpdate() {
   document.getElementById('update-text').textContent = 'Aktualizujem súbory...';
   document.getElementById('update-sub').textContent = 'Server sa reštartuje automaticky';
   try {
-    await fetch(API + '/do-update', { method: 'POST', headers: {'Content-Length': '0'} });
+    await fetch(API + '/do-update', { method: 'POST' });
   } catch {}
   btn.textContent = 'Reštartujem...';
   document.getElementById('update-text').textContent = 'Reštartujem server...';
