@@ -47,7 +47,7 @@ cd /volume1/docker/nas-downloader
 ## Krok 5 — Stiahni súbory projektu
 
 ```bash
-wget -O nas-downloader.zip https://github.com/TVOJ-UCET/nas-downloader/archive/refs/heads/main.zip
+wget -O nas-downloader.zip https://github.com/AsTerqq/nas-downloader/archive/refs/heads/main.zip
 unzip nas-downloader.zip
 mv nas-downloader-main/* .
 rm -rf nas-downloader-main nas-downloader.zip
@@ -91,7 +91,7 @@ Otvor v prehliadači: `http://192.168.1.XXX:8080`
 
 ```bash
 cd /volume1/docker/nas-downloader
-wget -O update.zip https://github.com/TVOJ-UCET/nas-downloader/archive/refs/heads/main.zip
+wget -O update.zip https://github.com/AsTerqq/nas-downloader/archive/refs/heads/main.zip
 unzip -o update.zip
 mv nas-downloader-main/* .
 rm -rf nas-downloader-main update.zip
