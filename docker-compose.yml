@@ -1,0 +1,15 @@
+version: "3.8"
+services:
+  nas-downloader:
+    build: .
+    container_name: nas-downloader
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      - MOVIES_PATH=/data/films
+      - SERIES_PATH=/data/series
+    volumes:
+      - ${APP_HOST_PATH:-/volume1/docker/nas-downloader}:/app
+      - ${MOVIES_HOST_PATH:-/volume1/films}:/data/films
+      - ${SERIES_HOST_PATH:-/volume1/movies}:/data/series

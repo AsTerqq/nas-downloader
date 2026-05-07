@@ -1,0 +1,1359 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NAS Downloader</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0a0f;
+    --surface: #111118;
+    --surface2: #1a1a24;
+    --border: #2a2a38;
+    --accent: #e8ff47;
+    --accent2: #7c6af7;
+    --text: #f0f0f8;
+    --muted: #6b6b80;
+    --success: #3ddc84;
+    --error: #ff5f5f;
+    --warn: #ffb347;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Syne', sans-serif;
+    min-height: 100vh;
+    padding: 0;
+    overflow-x: hidden;
+  }
+
+  /* ── BG GRID ── */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(var(--border) 1px, transparent 1px),
+      linear-gradient(90deg, var(--border) 1px, transparent 1px);
+    background-size: 40px 40px;
+    opacity: 0.25;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .glow {
+    position: fixed;
+    width: 600px; height: 600px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(124,106,247,0.12) 0%, transparent 70%);
+    top: -200px; left: -100px;
+    pointer-events: none;
+    z-index: 0;
+  }
+  .glow2 {
+    position: fixed;
+    width: 400px; height: 400px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(232,255,71,0.07) 0%, transparent 70%);
+    bottom: 0; right: 0;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* ── LAYOUT ── */
+  .wrap {
+    position: relative;
+    z-index: 1;
+    max-width: 780px;
+    margin: 0 auto;
+    padding: 48px 24px 80px;
+  }
+
+  /* ── HEADER ── */
+  header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 48px;
+    animation: fadeDown .5s ease;
+  }
+  .logo {
+    width: 44px; height: 44px;
+    background: var(--accent);
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 22px;
+    flex-shrink: 0;
+  }
+  header h1 {
+    font-size: 28px;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+    line-height: 1;
+  }
+  header h1 span { color: var(--accent); }
+  header p {
+    font-size: 13px;
+    color: var(--muted);
+    margin-top: 4px;
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  /* ── CARD ── */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 28px;
+    margin-bottom: 20px;
+    animation: fadeUp .4s ease;
+  }
+  .card-title {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 18px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .card-title::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  /* ── TYPE TOGGLE ── */
+  .type-toggle {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-bottom: 20px;
+  }
+  .type-btn {
+    background: var(--surface2);
+    border: 2px solid var(--border);
+    border-radius: 12px;
+    padding: 14px 10px;
+    color: var(--muted);
+    font-family: 'Syne', sans-serif;
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all .2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+  }
+  .type-btn:hover { border-color: var(--accent2); color: var(--text); }
+  .type-btn.active {
+    border-color: var(--accent);
+    background: rgba(232,255,71,0.06);
+    color: var(--accent);
+  }
+  .type-btn .icon { font-size: 20px; }
+
+  /* ── INPUTS ── */
+  .field { margin-bottom: 16px; }
+  label {
+    display: block;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 8px;
+  }
+  input[type="text"], input[type="url"], select {
+    width: 100%;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 13px 16px;
+    color: var(--text);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    outline: none;
+    transition: border-color .2s, box-shadow .2s;
+    appearance: none;
+  }
+  input::placeholder { color: var(--muted); }
+  input:focus, select:focus {
+    border-color: var(--accent2);
+    box-shadow: 0 0 0 3px rgba(124,106,247,0.15);
+  }
+  select {
+    cursor: pointer;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%236b6b80' d='M6 8L0 0h12z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 16px center;
+    padding-right: 40px;
+  }
+
+  .row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+  /* ── SERIAL FIELDS ── */
+  #serial-fields {
+    display: none;
+    animation: fadeDown .25s ease;
+  }
+  #serial-fields.show { display: block; }
+
+  .path-preview { display: none; }
+
+  /* ── FOLDER TREE ── */
+  .folder-tree {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 18px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    line-height: 2;
+    margin-top: 16px;
+    overflow: hidden;
+    min-height: 52px;
+  }
+  .tl {
+    display: block;
+    opacity: 0;
+    transform: translateX(-8px);
+    animation: treeIn 0.2s ease forwards;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .tl.c0 { color: var(--muted);    animation-delay: 0s; }
+  .tl.c1 { color: var(--accent2);  animation-delay: 0.13s; }
+  .tl.c2 { color: var(--accent2);  animation-delay: 0.26s; }
+  .tl.c3 { color: var(--success);  animation-delay: 0.39s; }
+  @keyframes treeIn {
+    to { opacity: 1; transform: translateX(0); }
+  }
+
+  /* ── DOWNLOAD BTN ── */
+  .dl-btn {
+    width: 100%;
+    background: var(--accent);
+    color: #0a0a0f;
+    border: none;
+    border-radius: 12px;
+    padding: 16px;
+    font-family: 'Syne', sans-serif;
+    font-size: 16px;
+    font-weight: 800;
+    letter-spacing: 0.5px;
+    cursor: pointer;
+    transition: transform .15s, box-shadow .15s, opacity .15s;
+    margin-top: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+  }
+  .dl-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(232,255,71,0.25);
+  }
+  .dl-btn:active { transform: translateY(0); }
+  .dl-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; box-shadow: none; }
+
+  /* ── JOBS ── */
+  #jobs-section { animation: fadeUp .4s ease .1s both; }
+  .job-item {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 18px 20px;
+    margin-bottom: 12px;
+    transition: border-color .2s;
+  }
+  .job-item.done { border-color: rgba(61,220,132,0.3); }
+  .job-item.error { border-color: rgba(255,95,95,0.3); }
+  .job-item.running { border-color: rgba(124,106,247,0.3); }
+
+  .job-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 10px;
+  }
+  .job-status {
+    font-size: 18px;
+    flex-shrink: 0;
+  }
+  .job-title {
+    font-weight: 700;
+    font-size: 15px;
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .job-badge {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    padding: 3px 8px;
+    border-radius: 6px;
+  }
+  .badge-running { background: rgba(124,106,247,0.15); color: var(--accent2); }
+  .badge-done    { background: rgba(61,220,132,0.15);  color: var(--success); }
+  .badge-error   { background: rgba(255,95,95,0.15);   color: var(--error); }
+  .badge-pending    { background: rgba(255,179,71,0.15);  color: var(--warn); }
+  .badge-cancelled  { background: rgba(107,107,128,0.15); color: var(--muted); }
+
+  .job-action-btn {
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    padding: 4px 9px;
+    font-size: 13px;
+    line-height: 1;
+    cursor: pointer;
+    flex-shrink: 0;
+    color: var(--muted);
+    transition: all .2s;
+  }
+  .job-action-btn:hover { border-color: var(--error); color: var(--error); background: rgba(255,95,95,0.08); }
+  .job-action-btn.stop { border-color: rgba(255,95,95,0.35); color: var(--error); }
+
+  .job-path {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--muted);
+    margin-bottom: 10px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* ── PROGRESS BAR ── */
+  .progress-wrap {
+    background: var(--surface2);
+    border-radius: 6px;
+    height: 6px;
+    overflow: hidden;
+    margin-bottom: 10px;
+  }
+  .progress-bar {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent2), var(--accent));
+    border-radius: 6px;
+    transition: width .3s ease;
+    min-width: 4px;
+  }
+
+  /* ── LOG ── */
+  .log-toggle {
+    background: none;
+    border: none;
+    color: var(--muted);
+    font-size: 11px;
+    font-family: 'JetBrains Mono', monospace;
+    cursor: pointer;
+    padding: 0;
+    transition: color .2s;
+  }
+  .log-toggle:hover { color: var(--text); }
+  .log-box {
+    background: #05050a;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+    margin-top: 10px;
+    max-height: 160px;
+    overflow-y: auto;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: #8888aa;
+    line-height: 1.6;
+    display: none;
+  }
+  .log-box.show { display: block; }
+
+  /* ── EMPTY STATE ── */
+  .empty {
+    text-align: center;
+    padding: 40px 20px;
+    color: var(--muted);
+    font-size: 14px;
+  }
+  .empty-icon { font-size: 40px; margin-bottom: 12px; }
+
+  /* ── ANIMS ── */
+  @keyframes fadeDown {
+    from { opacity: 0; transform: translateY(-12px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(16px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  /* ── SPINNER ── */
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .spinner {
+    width: 16px; height: 16px;
+    border: 2px solid rgba(0,0,0,0.3);
+    border-top-color: #0a0a0f;
+    border-radius: 50%;
+    animation: spin .6s linear infinite;
+  }
+
+  /* ── REBUILD BTN ── */
+  .rebuild-btn {
+    margin-left: auto;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 8px 14px;
+    color: var(--muted);
+    font-family: 'Syne', sans-serif;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all .2s;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+  .rebuild-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* ── MODAL ── */
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.7);
+    backdrop-filter: blur(4px);
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    animation: fadeUp .2s ease;
+  }
+  .modal-overlay.hidden { display: none; }
+  .modal {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 28px;
+    width: 360px;
+    max-width: 90vw;
+  }
+  .modal h3 {
+    font-size: 16px;
+    font-weight: 800;
+    margin-bottom: 20px;
+  }
+  .modal-row { display: grid; grid-template-columns: 80px 1fr; gap: 8px; margin-bottom: 8px; }
+  .modal-actions { display: flex; gap: 10px; margin-top: 20px; }
+  .btn-primary {
+    flex: 1;
+    background: var(--accent);
+    color: #0a0a0f;
+    border: none;
+    border-radius: 10px;
+    padding: 12px;
+    font-family: 'Syne', sans-serif;
+    font-size: 14px;
+    font-weight: 800;
+    cursor: pointer;
+  }
+  .btn-secondary {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 16px;
+    color: var(--muted);
+    font-family: 'Syne', sans-serif;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  /* ── EPISODE SEARCH ── */
+  .search-eps-btn {
+    width: 100%;
+    background: var(--surface2);
+    border: 1px solid var(--accent2);
+    border-radius: 10px;
+    padding: 13px 16px;
+    color: var(--accent2);
+    font-family: 'Syne', sans-serif;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all .2s;
+  }
+  .search-eps-btn:hover { background: rgba(124,106,247,0.12); }
+  .search-eps-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .ep-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    transition: background .15s;
+  }
+  .ep-item:last-child { border-bottom: none; }
+  .ep-item:hover { background: rgba(255,255,255,0.03); }
+  .ep-num {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--accent2);
+    font-weight: 700;
+    flex-shrink: 0;
+    min-width: 32px;
+  }
+  .ep-ttl {
+    flex: 1;
+    font-size: 12px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--text);
+  }
+  .lang-badge {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.8px;
+    padding: 3px 8px;
+    border-radius: 5px;
+    text-transform: uppercase;
+    flex-shrink: 0;
+  }
+  .lb-cz-dub { background: rgba(61,220,132,0.15);  color: var(--success); }
+  .lb-sk-dub { background: rgba(232,255,71,0.12);   color: var(--accent); }
+  .lb-cz-sub, .lb-sk-sub { background: rgba(255,179,71,0.15); color: var(--warn); }
+  .lb-dub    { background: rgba(61,220,132,0.12);   color: var(--success); }
+  .lb-sub    { background: rgba(255,179,71,0.12);   color: var(--warn); }
+  .lb-unknown{ background: rgba(107,107,128,0.12);  color: var(--muted); }
+  .ep-dl-btn {
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    padding: 5px 10px;
+    color: var(--muted);
+    font-size: 12px;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: all .2s;
+  }
+  .ep-dl-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* ── HISTORY SERIES GROUPS ── */
+  .series-group { border: 1px solid var(--border); border-radius: 10px; margin-bottom: 8px; overflow: hidden; }
+  .series-header {
+    display: flex; align-items: center; gap: 10px; padding: 12px 14px;
+    cursor: pointer; background: var(--surface2); user-select: none;
+  }
+  .series-header:hover { background: var(--surface3, #1e2330); }
+  .series-toggle { font-size: 10px; color: var(--muted); transition: transform .2s; flex-shrink:0; }
+  .series-toggle.open { transform: rotate(90deg); }
+  .series-name { font-size: 13px; font-weight: 600; flex: 1; }
+  .series-stats { font-size: 11px; color: var(--muted); white-space: nowrap; }
+  .series-clear { font-size: 11px; padding: 3px 8px; background: transparent; border: 1px solid var(--border); border-radius: 5px; color: var(--muted); cursor: pointer; flex-shrink:0; }
+  .series-episodes { display: none; padding: 6px 14px 10px; }
+  .series-episodes.open { display: block; }
+  .hist-ep { display: flex; align-items: center; gap: 8px; padding: 5px 0; border-bottom: 1px solid rgba(255,255,255,0.04); font-size: 12px; }
+  .hist-ep:last-child { border-bottom: none; }
+  .hist-ep-num { color: var(--muted); min-width: 38px; font-family: 'JetBrains Mono', monospace; font-size: 11px; }
+  .hist-ep-name { flex: 1; color: var(--text); }
+  .hist-ep-status { font-size: 11px; }
+
+  /* ── TOAST ── */
+  #toast {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%) translateY(80px);
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 12px 20px;
+    font-size: 13px;
+    font-weight: 600;
+    transition: transform .3s ease;
+    z-index: 999;
+    white-space: nowrap;
+  }
+  #toast.show { transform: translateX(-50%) translateY(0); }
+  #toast.success { border-color: rgba(61,220,132,0.4); color: var(--success); }
+  #toast.error   { border-color: rgba(255,95,95,0.4);  color: var(--error); }
+</style>
+</head>
+<body>
+
+<div class="glow"></div>
+<div class="glow2"></div>
+
+<div class="wrap">
+
+  <!-- HEADER -->
+  <header>
+    <div class="logo">⬇</div>
+    <div>
+      <h1>NAS <span>Downloader</span></h1>
+      <p>prehrajto.cz → namapovaný disk &nbsp;<span id="ver" style="opacity:0.4;font-size:11px;"></span></p>
+    </div>
+    <button class="rebuild-btn" onclick="restartServer()" style="margin-right:8px;">↺ Restart</button>
+    <button class="rebuild-btn" onclick="openRebuildModal()">🔄 Rebuild</button>
+  </header>
+
+  <!-- REBUILD MODAL -->
+  <div class="modal-overlay hidden" id="rebuild-modal">
+    <div class="modal">
+      <h3>🔄 Rebuild kontajnera</h3>
+      <div class="field">
+        <label>DSM port</label>
+        <input type="text" id="dsm-port" placeholder="5001" />
+      </div>
+      <div class="field">
+        <label>Používateľ</label>
+        <input type="text" id="dsm-user" placeholder="admin" />
+      </div>
+      <div class="field">
+        <label>Heslo</label>
+        <input type="password" id="dsm-pass" placeholder="••••••" />
+      </div>
+      <div class="modal-actions">
+        <button class="btn-secondary" onclick="closeRebuildModal()">Zrušiť</button>
+        <button class="btn-primary" id="rebuild-go-btn" onclick="triggerRebuild()">🔄 Spustiť rebuild</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- FORM CARD -->
+  <div class="card">
+    <div class="card-title">Nové sťahovanie</div>
+
+    <!-- TYP -->
+    <div class="type-toggle">
+      <button class="type-btn active" id="btn-film" onclick="setType('film')">
+        <span class="icon">🎬</span> Film
+      </button>
+      <button class="type-btn" id="btn-serial" onclick="setType('serial')">
+        <span class="icon">📺</span> Seriál
+      </button>
+    </div>
+
+    <!-- URL -->
+    <div class="field">
+      <label>Link z prehrajto.cz</label>
+      <div style="position:relative;">
+        <input type="url" id="url" placeholder="https://prehrajto.cz/..." oninput="onUrlInput()" style="padding-right:44px;" />
+        <span id="url-spinner" style="position:absolute;right:14px;top:50%;transform:translateY(-50%);font-size:13px;color:var(--muted);display:none;">⏳</span>
+      </div>
+    </div>
+
+    <!-- TITLE -->
+    <div class="field" style="position:relative;">
+      <label>Názov</label>
+      <div style="display:flex;gap:8px;">
+        <input type="text" id="title" placeholder="napr. The Dark Knight" oninput="onTitleInput()" style="flex:1;" />
+        <button onclick="tmdbSearch()" style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:0 14px;color:var(--muted);font-size:16px;cursor:pointer;flex-shrink:0;" title="Hľadať na TMDB">🔍</button>
+      </div>
+      <div id="tmdb-dropdown" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--surface);border:1px solid var(--border);border-radius:12px;z-index:50;overflow:hidden;margin-top:4px;box-shadow:0 8px 24px rgba(0,0,0,0.4);"></div>
+    </div>
+
+    <!-- FILM FIELDS -->
+    <div id="film-fields">
+      <div class="field">
+        <label>Rok vydania</label>
+        <input type="text" id="year" placeholder="napr. 2008" maxlength="4" oninput="updatePreview()" />
+      </div>
+    </div>
+
+    <!-- SERIAL FIELDS -->
+    <div id="serial-fields">
+      <div class="row-2">
+        <div class="field">
+          <label>Séria (Season)</label>
+          <select id="season" onchange="updatePreview()">
+            <option value="1">Season 1</option>
+            <option value="2">Season 2</option>
+            <option value="3">Season 3</option>
+            <option value="4">Season 4</option>
+            <option value="5">Season 5</option>
+            <option value="6">Season 6</option>
+            <option value="7">Season 7</option>
+            <option value="8">Season 8</option>
+            <option value="9">Season 9</option>
+            <option value="10">Season 10</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Epizóda (voliteľné)</label>
+          <input type="text" id="episode" placeholder="napr. E01" />
+        </div>
+      </div>
+      <div class="row-2" style="margin-top:4px;">
+        <div class="field">
+          <label>Jazyk dabingu</label>
+          <select id="lang-pref">
+            <option value="any">Akýkoľvek</option>
+            <option value="cz" selected>CZ Dabing</option>
+            <option value="sk">SK Dabing</option>
+            <option value="en">Anglicky (EN)</option>
+          </select>
+        </div>
+        <div class="field" style="display:flex;align-items:flex-end;">
+          <button id="search-eps-btn" class="search-eps-btn" onclick="searchEpisodes()">🔎 Hľadať epizódy</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- FOLDER TREE -->
+    <div class="folder-tree" id="folder-tree"></div>
+
+    <!-- EPISODE RESULTS PANEL -->
+    <div id="ep-panel" style="display:none;margin-top:16px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+        <span id="ep-panel-title" style="font-size:11px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);"></span>
+        <button onclick="downloadAllEpisodes()" style="background:var(--accent);color:#0a0a0f;border:none;border-radius:8px;padding:7px 14px;font-family:'Syne',sans-serif;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap;">⬇ Stiahnuť všetky</button>
+      </div>
+      <div id="ep-warning" style="display:none;background:rgba(255,179,71,0.1);border:1px solid rgba(255,179,71,0.3);border-radius:8px;padding:10px 14px;margin-bottom:10px;font-size:12px;color:var(--warn);">⚠️ Nájdené iba verzie s titulkami – dabing nebol nájdený</div>
+      <div id="ep-list" style="max-height:280px;overflow-y:auto;background:var(--surface2);border:1px solid var(--border);border-radius:10px;"></div>
+    </div>
+
+    <!-- BTN -->
+    <button class="dl-btn" id="dl-btn" onclick="startDownload()">
+      ⬇ Začať sťahovanie
+    </button>
+  </div>
+
+  <!-- ACTIVE JOBS -->
+  <div id="jobs-section" style="display:none">
+    <div class="card-title" style="margin-bottom:14px;">
+      Prebieha
+      <span id="jobs-count" style="font-size:10px;color:var(--muted);margin-left:4px;"></span>
+    </div>
+    <div id="jobs-list"></div>
+  </div>
+
+  <!-- HISTORY -->
+  <div id="history-section" style="display:none">
+    <div class="card-title" style="margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;">
+      <span>História</span>
+      <button onclick="clearAllHistory()" style="font-size:11px;padding:4px 10px;background:transparent;border:1px solid var(--border);border-radius:6px;color:var(--muted);cursor:pointer;">Vymazať všetko</button>
+    </div>
+    <div id="history-list"></div>
+  </div>
+
+</div>
+
+<!-- TOAST -->
+<div id="toast"></div>
+
+<script>
+const API = window.location.origin;
+let mediaType = 'film';
+let jobsData = {};
+let pollInterval = null;
+let openLogs = new Set();
+let cfg = { movies_path: '/volume1/films', series_path: '/volume1/movies' };
+
+async function loadConfig() {
+  try {
+    const res = await fetch(API + '/config');
+    cfg = await res.json();
+    if (cfg.version) document.getElementById('ver').textContent = 'v' + cfg.version;
+  } catch {}
+}
+
+// ── TYPE ──────────────────────────────────────────────────────────────────────
+function setType(t) {
+  if (mediaType === t) return;
+  mediaType = t;
+  document.getElementById('btn-film').classList.toggle('active', t === 'film');
+  document.getElementById('btn-serial').classList.toggle('active', t === 'serial');
+  document.getElementById('film-fields').style.display = t === 'film' ? '' : 'none';
+  const sf = document.getElementById('serial-fields');
+  sf.style.display = t === 'serial' ? '' : 'none';
+  sf.classList.toggle('show', t === 'serial');
+  if (t === 'film') document.getElementById('ep-panel').style.display = 'none';
+  // reset form when switching mode
+  document.getElementById('title').value = '';
+  document.getElementById('url').value = '';
+  const yearEl = document.getElementById('year');
+  if (yearEl) yearEl.value = '';
+  updatePreview();
+}
+
+// ── URL AUTO-FILL ─────────────────────────────────────────────────────────────
+let urlTimer = null;
+function onUrlInput() {
+  clearTimeout(urlTimer);
+  const url = document.getElementById('url').value.trim();
+  if (!url.startsWith('http')) return;
+  urlTimer = setTimeout(() => fetchTitle(url), 600);
+}
+
+async function fetchTitle(url) {
+  document.getElementById('url-spinner').style.display = '';
+  try {
+    const res = await fetch(API + '/fetch-title?url=' + encodeURIComponent(url));
+    const data = await res.json();
+    if (data.title) {
+      document.getElementById('title').value = data.title;
+      if (data.year) document.getElementById('year').value = data.year;
+      onTitleInput();
+      toast('✅ Názov doplnený', 'success');
+    }
+  } catch {}
+  document.getElementById('url-spinner').style.display = 'none';
+}
+
+// ── TMDB SEARCH PICKER ────────────────────────────────────────────────────────
+async function tmdbSearch() {
+  const q = document.getElementById('title').value.trim();
+  if (!q) { toast('Zadaj názov pre hľadanie', 'error'); return; }
+  const dd = document.getElementById('tmdb-dropdown');
+  dd.style.display = '';
+  dd.innerHTML = '<div style="padding:12px;color:var(--muted);font-size:12px;font-family:JetBrains Mono,monospace;">⏳ Hľadám...</div>';
+  try {
+    const res = await fetch(`${API}/tmdb-search?q=${encodeURIComponent(q)}&type=${mediaType}`);
+    const data = await res.json();
+    if (!data.results?.length) {
+      dd.innerHTML = '<div style="padding:12px;color:var(--muted);font-size:12px;">Nič sa nenašlo</div>';
+      return;
+    }
+    dd.innerHTML = data.results.map((r, i) => `
+      <div onclick="tmdbPick(${i})" data-title="${esc(r.title)}" data-year="${esc(r.year)}"
+        style="display:flex;align-items:center;gap:10px;padding:10px 14px;cursor:pointer;border-bottom:1px solid var(--border);transition:background .15s;"
+        onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background=''">
+        ${r.poster ? `<img src="${r.poster}" style="width:36px;height:54px;border-radius:4px;object-fit:cover;flex-shrink:0;">` : '<div style="width:36px;height:54px;background:var(--surface2);border-radius:4px;flex-shrink:0;"></div>'}
+        <div>
+          <div style="font-weight:700;font-size:14px;">${esc(r.title)}</div>
+          <div style="font-size:11px;color:var(--muted);">${r.year || '—'}</div>
+        </div>
+      </div>
+    `).join('');
+  } catch {
+    dd.innerHTML = '<div style="padding:12px;color:var(--error);font-size:12px;">Chyba spojenia</div>';
+  }
+}
+
+function tmdbPick(i) {
+  const items = document.querySelectorAll('#tmdb-dropdown [data-title]');
+  const item = items[i];
+  if (!item) return;
+  document.getElementById('title').value = item.dataset.title;
+  if (item.dataset.year) document.getElementById('year').value = item.dataset.year;
+  document.getElementById('tmdb-dropdown').style.display = 'none';
+  updatePreview();
+}
+
+document.addEventListener('click', e => {
+  if (!e.target.closest('.field')) {
+    document.getElementById('tmdb-dropdown').style.display = 'none';
+  }
+});
+
+// ── SEASON DETECT ─────────────────────────────────────────────────────────────
+function detectSeason(title) {
+  const m = title.match(/[Ss](\d{1,2})[Ee]\d+/) || title.match(/(\d{1,2})[xX]\d+/);
+  return m ? parseInt(m[1]) : null;
+}
+
+function onTitleInput() {
+  const title = document.getElementById('title').value;
+  if (mediaType === 'serial') {
+    const s = detectSeason(title);
+    if (s) {
+      const sel = document.getElementById('season');
+      if (sel && s >= 1 && s <= 10) sel.value = String(s);
+    }
+  }
+  updatePreview();
+}
+
+// ── FOLDER TREE ───────────────────────────────────────────────────────────────
+function updatePreview() {
+  const rawTitle = document.getElementById('title').value.trim();
+  const title    = rawTitle || 'Názov';
+  const year     = (document.getElementById('year')?.value || '').trim();
+  const season   = document.getElementById('season')?.value || '1';
+  const base     = mediaType === 'film' ? cfg.movies_path : cfg.series_path;
+
+  let lines;
+  if (mediaType === 'film') {
+    const folder = title + (year ? ` (${year})` : '');
+    lines = [
+      { text: `📁 ${base}/`,             cls: 'c0' },
+      { text: `└── 📁 ${folder}/`,        cls: 'c1' },
+      { text: `      └── 🎬 film.mkv`,    cls: 'c3' },
+    ];
+  } else {
+    const cleanTitle = title.replace(/[Ss]\d{1,2}[Ee]\d+|\d{1,2}[xX]\d+/g, '').trim() || 'Názov';
+    lines = [
+      { text: `📁 ${base}/`,                       cls: 'c0' },
+      { text: `└── 📁 ${cleanTitle}/`,              cls: 'c1' },
+      { text: `      └── 📁 Season ${season}/`,     cls: 'c2' },
+      { text: `            └── 🎬 episode.mkv`,     cls: 'c3' },
+    ];
+  }
+
+  document.getElementById('folder-tree').innerHTML = lines
+    .map(l => `<span class="tl ${l.cls}">${esc(l.text)}</span>`)
+    .join('');
+}
+
+// ── DOWNLOAD ──────────────────────────────────────────────────────────────────
+async function startDownload() {
+  const url   = document.getElementById('url').value.trim();
+  const title = document.getElementById('title').value.trim();
+  const year  = document.getElementById('year')?.value.trim() || '';
+  const season = document.getElementById('season')?.value || '1';
+
+  if (!url) { toast('Vlož link!', 'error'); return; }
+  if (!title) { toast('Zadaj názov!', 'error'); return; }
+
+  const btn = document.getElementById('dl-btn');
+  btn.disabled = true;
+  btn.innerHTML = `<div class="spinner"></div> Spúšťam...`;
+
+  try {
+    const res = await fetch(API + '/download', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url, title, year, season, type: mediaType })
+    });
+    const data = await res.json();
+    if (data.job_id) {
+      toast('✅ Sťahovanie spustené!', 'success');
+      document.getElementById('url').value = '';
+      startPolling();
+    } else {
+      toast('❌ Chyba: ' + (data.error || 'neznáma'), 'error');
+    }
+  } catch (e) {
+    toast('❌ Server nedostupný. Spusti server.py', 'error');
+  }
+
+  btn.disabled = false;
+  btn.innerHTML = '⬇ Začať sťahovanie';
+}
+
+// ── POLLING ───────────────────────────────────────────────────────────────────
+function startPolling() {
+  if (!pollInterval) {
+    pollInterval = setInterval(fetchJobs, 1500);
+    fetchJobs();
+  }
+}
+
+async function fetchJobs() {
+  try {
+    const res = await fetch(API + '/jobs');
+    const data = await res.json();
+    jobsData = data;
+    renderJobs();
+
+    // zastaviť polling ak nič nebieži
+    const anyRunning = Object.values(data).some(j => j.status === 'running' || j.status === 'pending');
+    if (!anyRunning && pollInterval) {
+      clearInterval(pollInterval);
+      pollInterval = null;
+    }
+  } catch {}
+}
+
+// ── RENDER JOBS ───────────────────────────────────────────────────────────────
+function renderJobs() {
+  const activeStatuses = new Set(['queued', 'running', 'pending']);
+  const ids = Object.keys(jobsData);
+  const activeIds = ids.filter(id => activeStatuses.has(jobsData[id].status));
+  const doneIds   = ids.filter(id => !activeStatuses.has(jobsData[id].status));
+
+  // ── ACTIVE section — rebuild in order each poll (avoids prepend ordering bugs)
+  const jobsSection = document.getElementById('jobs-section');
+  const container   = document.getElementById('jobs-list');
+  jobsSection.style.display = activeIds.length ? '' : 'none';
+  document.getElementById('jobs-count').textContent = activeIds.length ? `(${activeIds.length})` : '';
+
+  // sort by numeric job ID so E01→E02→... order is preserved
+  activeIds.sort((a, b) => parseInt(a) - parseInt(b));
+
+  container.innerHTML = activeIds.map(id => {
+    const j = jobsData[id];
+    const emoji = j.status === 'running' ? '⏳' : '🕐';
+    return `<div class="job-item ${j.status}" id="job-${id}">
+      <div class="job-header">
+        <span class="job-status">${emoji}</span>
+        <span class="job-title">${esc(j.title)}</span>
+        <span class="job-badge badge-${j.status}">${j.status}</span>
+        <button class="job-action-btn stop" onclick="jobAction('${id}')" title="Zastaviť">⏹</button>
+      </div>
+      <div class="job-path">📁 ${esc(j.output_path)}</div>
+      <div class="progress-wrap"><div class="progress-bar" style="width:${j.progress||0}%"></div></div>
+      <button class="log-toggle" onclick="toggleLog('${id}')">▶ zobraziť log</button>
+      <div class="log-box${openLogs.has(id)?' show':''}" id="log-${id}"></div>
+    </div>`;
+  }).join('');
+
+  activeIds.forEach(id => {
+    const j = jobsData[id];
+    if (openLogs.has(id) || j.status === 'running') fetchLog(id);
+  });
+
+  // ── HISTORY section — grouped by series_key
+  const histSection = document.getElementById('history-section');
+  const histList    = document.getElementById('history-list');
+  histSection.style.display = doneIds.length ? '' : 'none';
+
+  // group
+  const groups = {};
+  doneIds.forEach(id => {
+    const j = jobsData[id];
+    const key = j.series_key || j.title || '–';
+    if (!groups[key]) groups[key] = [];
+    groups[key].push({ id, ...j });
+  });
+
+  // rebuild history (full re-render on change)
+  const currentKeys = new Set([...histList.querySelectorAll('.series-group')].map(el => el.dataset.key));
+  const newKeys = new Set(Object.keys(groups));
+  const changed = currentKeys.size !== newKeys.size || [...newKeys].some(k => !currentKeys.has(k));
+  if (!changed) return;
+
+  histList.innerHTML = Object.entries(groups).map(([key, eps]) => {
+    const done  = eps.filter(e => e.status === 'done').length;
+    const error = eps.filter(e => e.status === 'error').length;
+    const stat  = `${done} ✅${error ? ' ' + error + ' ❌' : ''}`;
+    const epRows = eps.sort((a,b) => (a.title > b.title ? 1 : -1)).map(e => {
+      const ico = e.status === 'done' ? '✅' : e.status === 'error' ? '❌' : '⚠️';
+      return `<div class="hist-ep">
+        <span class="hist-ep-num">${esc(e.title.match(/S\d+E\d+/)?.[0] || '')}</span>
+        <span class="hist-ep-name">${esc(e.title)}</span>
+        <span class="hist-ep-status">${ico}</span>
+      </div>`;
+    }).join('');
+    const safeKey = CSS.escape(key);
+    return `<div class="series-group" data-key="${esc(key)}">
+      <div class="series-header" onclick="toggleSeriesGroup(this)">
+        <span class="series-toggle">▶</span>
+        <span class="series-name">📺 ${esc(key)}</span>
+        <span class="series-stats">${stat}</span>
+        <button class="series-clear" onclick="event.stopPropagation();clearSeries('${esc(key)}')" title="Vymazať zo histórie">🗑</button>
+      </div>
+      <div class="series-episodes">${epRows}</div>
+    </div>`;
+  }).join('');
+}
+
+function toggleSeriesGroup(header) {
+  const toggle = header.querySelector('.series-toggle');
+  const eps = header.nextElementSibling;
+  const isOpen = eps.classList.toggle('open');
+  toggle.classList.toggle('open', isOpen);
+}
+
+async function clearSeries(key) {
+  await fetch(`${API}/clear-history?key=${encodeURIComponent(key)}`);
+  await fetchJobs();
+}
+
+async function clearAllHistory() {
+  await fetch(`${API}/clear-history`);
+  await fetchJobs();
+}
+
+async function fetchLog(id) {
+  try {
+    const res = await fetch(`${API}/status?id=${id}`);
+    const data = await res.json();
+    const box = document.getElementById(`log-${id}`);
+    if (box && data.log) {
+      box.innerHTML = data.log.map(l => esc(l)).join('<br>');
+      if (box.classList.contains('show')) box.scrollTop = box.scrollHeight;
+    }
+  } catch {}
+}
+
+function toggleLog(id) {
+  const box = document.getElementById(`log-${id}`);
+  box.classList.toggle('show');
+  if (box.classList.contains('show')) {
+    openLogs.add(id);
+    fetchLog(id);
+  } else {
+    openLogs.delete(id);
+  }
+}
+
+function esc(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ── TOAST ─────────────────────────────────────────────────────────────────────
+function toast(msg, type = '') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = `show ${type}`;
+  setTimeout(() => el.className = '', 3000);
+}
+
+// ── RESTART ───────────────────────────────────────────────────────────────────
+async function restartServer() {
+  toast('↺ Reštartujem server...', '');
+  try {
+    await fetch(API + '/restart');
+  } catch {}
+  // wait for server to come back up
+  await new Promise(r => setTimeout(r, 3000));
+  for (let i = 0; i < 15; i++) {
+    try {
+      const r = await fetch(API + '/config');
+      if (r.ok) { location.reload(); return; }
+    } catch {}
+    await new Promise(r => setTimeout(r, 1000));
+  }
+  location.reload();
+}
+
+// ── REBUILD ───────────────────────────────────────────────────────────────────
+function openRebuildModal() {
+  const s = JSON.parse(localStorage.getItem('dsm') || '{}');
+  document.getElementById('dsm-port').value = s.port || '5001';
+  document.getElementById('dsm-user').value = s.user || '';
+  document.getElementById('dsm-pass').value = s.pass || '';
+  document.getElementById('rebuild-modal').classList.remove('hidden');
+}
+
+function closeRebuildModal() {
+  document.getElementById('rebuild-modal').classList.add('hidden');
+}
+
+async function triggerRebuild() {
+  const port = document.getElementById('dsm-port').value.trim() || '5001';
+  const user = document.getElementById('dsm-user').value.trim();
+  const pass = document.getElementById('dsm-pass').value;
+  if (!user || !pass) { toast('Zadaj prihlasovacie údaje', 'error'); return; }
+
+  localStorage.setItem('dsm', JSON.stringify({ port, user, pass }));
+
+  const btn = document.getElementById('rebuild-go-btn');
+  btn.disabled = true;
+  btn.textContent = '⏳ Spúšťam...';
+
+  try {
+    const res = await fetch(API + '/dsm-run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ host: window.location.hostname, port, user, pass, task: 'Rebuild nas-downloader' })
+    });
+    const data = await res.json();
+    if (data.error === 'login_failed') { toast('❌ Zlé heslo alebo meno', 'error'); return; }
+    if (data.error === 'task_not_found') { toast('❌ Task "Rebuild nas-downloader" nenájdený', 'error'); return; }
+    if (data.error) { toast('❌ ' + data.error, 'error'); return; }
+    if (data.success) {
+      toast('✅ Rebuild spustený! Stránka sa znovu načíta o ~2 min.', 'success');
+      closeRebuildModal();
+    } else {
+      console.error('DSM run failed:', data.debug);
+      const code = data.debug?.error?.code;
+      toast('❌ Chyba pri spustení tasku' + (code ? ' (kód ' + code + ')' : ''), 'error');
+    }
+  } catch (e) {
+    toast('❌ Chyba spojenia', 'error');
+  }
+
+  btn.disabled = false;
+  btn.textContent = '🔄 Spustiť rebuild';
+}
+
+// ── JOB ACTIONS ───────────────────────────────────────────────────────────────
+async function jobAction(id) {
+  const j = jobsData[id];
+  if (!j) return;
+  if (j.status === 'running' || j.status === 'pending') {
+    await cancelJob(id);
+  } else {
+    await deleteJob(id);
+  }
+}
+
+async function cancelJob(id) {
+  try {
+    await fetch(API + '/cancel', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ job_id: id })
+    });
+    toast('⏹ Stiahnutie zastavené', 'success');
+    fetchJobs();
+  } catch { toast('❌ Chyba', 'error'); }
+}
+
+async function deleteJob(id) {
+  try {
+    await fetch(API + '/delete-job', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ job_id: id })
+    });
+    const el = document.getElementById(`job-${id}`);
+    if (el) el.remove();
+    delete jobsData[id];
+    openLogs.delete(id);
+    const cnt = Object.keys(jobsData).length;
+    document.getElementById('jobs-count').textContent = cnt ? `(${cnt})` : '';
+    if (!cnt) document.getElementById('jobs-list').innerHTML =
+      `<div class="empty"><div class="empty-icon">📭</div>Zatiaľ žiadne sťahovania</div>`;
+  } catch { toast('❌ Chyba', 'error'); }
+}
+
+// ── EPISODE SEARCH ────────────────────────────────────────────────────────────
+let foundEpisodes = [];
+
+async function searchEpisodes() {
+  const title = document.getElementById('title').value.trim();
+  if (!title) { toast('Zadaj názov seriálu!', 'error'); return; }
+
+  const season = document.getElementById('season').value;
+  const lang   = document.getElementById('lang-pref').value;
+  const btn    = document.getElementById('search-eps-btn');
+
+  btn.disabled = true;
+  btn.textContent = '⏳ Hľadám...';
+
+  try {
+    const res  = await fetch(`${API}/search-episodes?title=${encodeURIComponent(title)}&season=${season}&lang=${encodeURIComponent(lang)}`);
+    const data = await res.json();
+
+    if (data.error) { toast('❌ ' + data.error, 'error'); return; }
+
+    foundEpisodes = data.episodes || [];
+    renderEpisodes(foundEpisodes, lang);
+    if (!foundEpisodes.length) toast('Nenašli sa žiadne epizódy', 'error');
+  } catch {
+    toast('❌ Chyba pri hľadaní', 'error');
+  }
+
+  btn.disabled = false;
+  btn.textContent = '🔎 Hľadať epizódy';
+}
+
+function renderEpisodes(episodes, langPref) {
+  const panel   = document.getElementById('ep-panel');
+  const list    = document.getElementById('ep-list');
+  const warning = document.getElementById('ep-warning');
+  const ptitle  = document.getElementById('ep-panel-title');
+
+  if (!episodes.length) { panel.style.display = 'none'; return; }
+
+  panel.style.display = '';
+  ptitle.textContent  = `Nájdené epizódy (${episodes.length})`;
+
+  const hasDub = episodes.some(e => e.lang.endsWith('-dub') || e.lang === 'dub');
+  warning.style.display = (langPref !== 'any' && !hasDub) ? '' : 'none';
+
+  const badgeCls = l => ({ 'cz-dub':'lb-cz-dub','sk-dub':'lb-sk-dub','cz-sub':'lb-cz-sub','sk-sub':'lb-sk-sub','dub':'lb-dub','sub':'lb-sub' }[l] || 'lb-unknown');
+  const badgeTxt = l => ({ 'cz-dub':'CZ Dab','sk-dub':'SK Dab','cz-sub':'CZ Tit','sk-sub':'SK Tit','dub':'Dabing','sub':'Titulky','unknown':'?' }[l] || l);
+
+  list.innerHTML = episodes.map((ep, i) => {
+    const epLabel  = ep.episode ? `E${String(ep.episode).padStart(2,'0')}` : `#${i+1}`;
+    const epName   = ep.ep_name ? ` – ${esc(ep.ep_name)}` : '';
+    const altBadge = ep.alt_count ? `<span style="font-size:9px;color:var(--muted);margin-left:2px;">(+${ep.alt_count})</span>` : '';
+    const langEl = ep.lang === 'unknown'
+      ? `<button id="lang-badge-${i}" class="lang-badge lb-unknown" onclick="detectLang(${i})" title="Kliknúť = zistiť jazyk z metadát" style="cursor:pointer;border:none;font-family:inherit;text-decoration:underline dotted;">?</button>`
+      : `<span id="lang-badge-${i}" class="lang-badge ${badgeCls(ep.lang)}">${badgeTxt(ep.lang)}</span>`;
+    return `<div class="ep-item">
+      <span class="ep-num">${epLabel}</span>
+      <span class="ep-ttl" title="${esc(ep.title)}">${epLabel}${epName}</span>
+      ${langEl}${altBadge}
+      <button class="ep-dl-btn" onclick="downloadEp(${i})">⬇</button>
+    </div>`;
+  }).join('');
+}
+
+function downloadEp(idx) {
+  const ep = foundEpisodes[idx];
+  if (!ep) return;
+  const title  = document.getElementById('title').value.trim();
+  const season = document.getElementById('season').value;
+  startDownloadEp(ep.url, title, season, ep.episode, ep.ep_name);
+  startPolling();
+  toast('✅ Sťahovanie spustené', 'success');
+}
+
+async function downloadAllEpisodes() {
+  if (!foundEpisodes.length) return;
+  const title  = document.getElementById('title').value.trim();
+  const season = document.getElementById('season').value;
+  let started = 0, skipped = 0;
+  for (const ep of foundEpisodes) {
+    const data = await startDownloadEp(ep.url, title, season, ep.episode, ep.ep_name);
+    if (data && data.skipped) skipped++;
+    else started++;
+    await new Promise(r => setTimeout(r, 100));
+  }
+  const msg = skipped
+    ? `✅ Spustených ${started}, preskočených ${skipped} (už stiahnuté)`
+    : `✅ Spustených ${started} stiahnutí!`;
+  toast(msg, 'success');
+  if (started > 0) startPolling();
+}
+
+async function startDownloadEp(url, title, season, episodeNum, epName) {
+  try {
+    const res = await fetch(API + '/download', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url, title, season, episode_num: episodeNum, ep_name: epName || '', type: 'serial' })
+    });
+    const data = await res.json();
+    return data;
+  } catch {}
+}
+
+// ── LANGUAGE DETECT ───────────────────────────────────────────────────────────
+async function detectLang(idx) {
+  const ep = foundEpisodes[idx];
+  if (!ep) return;
+  const badge = document.getElementById(`lang-badge-${idx}`);
+  if (badge) { badge.textContent = '⏳'; badge.disabled = true; }
+  toast('🔍 Zisťujem jazyk... (môže trvať ~30s)', '');
+  try {
+    const res  = await fetch(`${API}/check-lang?url=${encodeURIComponent(ep.url)}`);
+    const data = await res.json();
+    const lang = data.lang || 'unknown';
+    if (foundEpisodes[idx]) foundEpisodes[idx].lang = lang;
+    if (badge) {
+      const cls = {'cz-dub':'lb-cz-dub','sk-dub':'lb-sk-dub','cz-sub':'lb-cz-sub','sk-sub':'lb-sk-sub','dub':'lb-dub','sub':'lb-sub'};
+      const txt = {'cz-dub':'CZ Dab','sk-dub':'SK Dab','cz-sub':'CZ Tit','sk-sub':'SK Tit','dub':'Dabing','sub':'Titulky'};
+      badge.className = `lang-badge ${cls[lang] || 'lb-unknown'}`;
+      badge.textContent = txt[lang] || '?';
+      badge.style.cursor = lang === 'unknown' ? 'pointer' : 'default';
+      badge.style.textDecoration = lang === 'unknown' ? 'underline dotted' : '';
+      if (lang !== 'unknown') badge.onclick = null;
+      badge.disabled = false;
+    }
+    const src = data.method === 'whisper' ? ' (Whisper audio)' : ' (metadáta)';
+    if (lang === 'unknown') toast('⚠️ Jazyk sa nedá zistiť' + src, '');
+    else toast(`✅ Jazyk: ${lang}` + src, 'success');
+  } catch {
+    if (badge) { badge.textContent = '?'; badge.disabled = false; }
+    toast('❌ Nedá sa zistiť jazyk', 'error');
+  }
+}
+
+// ── INIT ──────────────────────────────────────────────────────────────────────
+loadConfig().then(() => { setType('film'); updatePreview(); });
+fetchJobs();
+setInterval(fetchJobs, 5000);
+</script>
+</body>
+</html>
