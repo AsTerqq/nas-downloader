@@ -1137,7 +1137,7 @@ async function clearSeries(key) {
   await fetch(`${API}/clear-history?key=${encodeURIComponent(key)}`);
   await fetchJobs();
 }
-
+// test
 async function clearAllHistory() {
   await fetch(`${API}/clear-history`);
   await fetchJobs();
