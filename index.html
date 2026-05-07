@@ -430,6 +430,36 @@
   }
   .rebuild-btn:hover { border-color: var(--accent); color: var(--accent); }
 
+  /* ── UPDATE BANNER ── */
+  .update-banner {
+    background: linear-gradient(135deg, #e8ff47 0%, #c8df27 100%);
+    color: #0a0a0f;
+    border-radius: 12px;
+    padding: 14px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 20px;
+    animation: fadeUp .4s ease;
+  }
+  .update-banner .update-info { font-size: 13px; font-weight: 700; }
+  .update-banner .update-info small { display: block; font-size: 11px; font-weight: 400; opacity: 0.7; margin-top: 2px; }
+  .update-btn {
+    background: #0a0a0f;
+    color: #e8ff47;
+    border: none;
+    border-radius: 8px;
+    padding: 8px 16px;
+    font-family: 'Syne', sans-serif;
+    font-size: 13px;
+    font-weight: 800;
+    cursor: pointer;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .update-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
   /* ── MODAL ── */
   .modal-overlay {
     position: fixed;
@@ -611,6 +641,15 @@
     <button class="rebuild-btn" onclick="openRebuildModal()">🔄 Rebuild</button>
   </header>
 
+  <!-- UPDATE BANNER -->
+  <div id="update-banner" class="update-banner" style="display:none;">
+    <div class="update-info">
+      <span id="update-text">Dostupná nová verzia</span>
+      <small id="update-sub"></small>
+    </div>
+    <button class="update-btn" id="update-btn" onclick="doUpdate()">⬆ Aktualizovať</button>
+  </div>
+
   <!-- REBUILD MODAL -->
   <div class="modal-overlay hidden" id="rebuild-modal">
     <div class="modal">
@@ -770,6 +809,40 @@ async function loadConfig() {
     cfg = await res.json();
     if (cfg.version) document.getElementById('ver').textContent = 'v' + cfg.version;
   } catch {}
+}
+
+async function checkUpdate() {
+  try {
+    const res = await fetch(API + '/check-update');
+    const data = await res.json();
+    if (data.has_update) {
+      document.getElementById('update-text').textContent = `Dostupná verzia ${data.latest}`;
+      document.getElementById('update-sub').textContent = `Aktuálna verzia: ${data.current}`;
+      document.getElementById('update-banner').style.display = 'flex';
+    }
+  } catch {}
+}
+
+async function doUpdate() {
+  const btn = document.getElementById('update-btn');
+  btn.textContent = 'Sťahujem...';
+  btn.disabled = true;
+  document.getElementById('update-text').textContent = 'Aktualizujem súbory...';
+  document.getElementById('update-sub').textContent = 'Server sa reštartuje automaticky';
+  try {
+    await fetch(API + '/do-update', { method: 'POST', headers: {'Content-Length': '0'} });
+  } catch {}
+  btn.textContent = 'Reštartujem...';
+  document.getElementById('update-text').textContent = 'Reštartujem server...';
+  setTimeout(pollAfterUpdate, 4000);
+}
+
+async function pollAfterUpdate() {
+  try {
+    const res = await fetch(API + '/config');
+    if (res.ok) { location.reload(); return; }
+  } catch {}
+  setTimeout(pollAfterUpdate, 1500);
 }
 
 // ── TYPE ──────────────────────────────────────────────────────────────────────
@@ -1352,6 +1425,7 @@ async function detectLang(idx) {
 
 // ── INIT ──────────────────────────────────────────────────────────────────────
 loadConfig().then(() => { setType('film'); updatePreview(); });
+checkUpdate();
 fetchJobs();
 setInterval(fetchJobs, 5000);
 </script>

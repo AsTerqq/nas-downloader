@@ -77,12 +77,14 @@ def detect_audio_language(url):
             return ""
 
 
-VERSION = "4.3"
+VERSION = "4.4"
 
 MOVIES_PATH   = os.environ.get("MOVIES_PATH", "/data/films")
 SERIES_PATH   = os.environ.get("SERIES_PATH", "/data/series")
 YTDLP_PATH    = "yt-dlp"
 TMDB_API_KEY  = "0130bf38e3b81e1adb7d0f6e9107da9a"
+GITHUB_RAW    = "https://raw.githubusercontent.com/AsTerqq/nas-downloader/main/server.py"
+GITHUB_ZIP    = "https://github.com/AsTerqq/nas-downloader/archive/refs/heads/main.zip"
 
 # Aktívne sťahovania: { job_id: { status, log, progress } }
 jobs = {}
@@ -833,6 +835,16 @@ class Handler(BaseHTTPRequestHandler):
                 "version": VERSION
             })
 
+        elif path == "/check-update":
+            try:
+                import urllib.request as _ureq2
+                raw = _ureq2.urlopen(GITHUB_RAW, timeout=5).read().decode("utf-8", errors="replace")
+                m = re.search(r'^VERSION\s*=\s*["\']([^"\']+)["\']', raw, re.MULTILINE)
+                latest = m.group(1) if m else VERSION
+                self.send_json({"current": VERSION, "latest": latest, "has_update": latest != VERSION})
+            except Exception:
+                self.send_json({"current": VERSION, "latest": VERSION, "has_update": False})
+
         elif path == "/jobs":
             with jobs_lock:
                 summary = {
@@ -1017,6 +1029,34 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"success": run_ok, "debug": run_debug})
             except Exception as e:
                 self.send_json({"error": str(e)}, 500)
+
+        elif parsed.path == "/do-update":
+            def _run_update():
+                import urllib.request as _ureq3, zipfile, io, shutil
+                SKIP = {".env", "jobs_history.json"}
+                try:
+                    print("[update] Downloading ZIP from GitHub...", flush=True)
+                    data = _ureq3.urlopen(GITHUB_ZIP, timeout=60).read()
+                    with zipfile.ZipFile(io.BytesIO(data)) as z:
+                        for member in z.namelist():
+                            parts = member.split("/", 1)
+                            if len(parts) < 2 or not parts[1]:
+                                continue
+                            rel = parts[1]
+                            if rel in SKIP:
+                                continue
+                            dest = os.path.join("/app", rel)
+                            if member.endswith("/"):
+                                os.makedirs(dest, exist_ok=True)
+                            else:
+                                os.makedirs(os.path.dirname(dest), exist_ok=True)
+                                with z.open(member) as src, open(dest, "wb") as dst:
+                                    shutil.copyfileobj(src, dst)
+                    print("[update] Done — watchdog reštartuje server.", flush=True)
+                except Exception as e:
+                    print(f"[update] Chyba: {e}", flush=True)
+            self.send_json({"ok": True})
+            threading.Thread(target=_run_update, daemon=True).start()
 
         else:
             self.send_response(404)
