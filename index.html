@@ -1426,6 +1426,7 @@ async function detectLang(idx) {
 // ── INIT ──────────────────────────────────────────────────────────────────────
 loadConfig().then(() => { setType('film'); updatePreview(); });
 checkUpdate();
+setInterval(checkUpdate, 5 * 60 * 1000);
 fetchJobs();
 setInterval(fetchJobs, 5000);
 </script>

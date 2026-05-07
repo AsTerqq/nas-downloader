@@ -77,7 +77,7 @@ def detect_audio_language(url):
             return ""
 
 
-VERSION = "4.4"
+VERSION = "4.5"
 
 MOVIES_PATH   = os.environ.get("MOVIES_PATH", "/data/films")
 SERIES_PATH   = os.environ.get("SERIES_PATH", "/data/series")
