@@ -689,9 +689,9 @@
 
     <!-- URL -->
     <div class="field">
-      <label>Link z prehrajto.cz</label>
+      <label id="url-label">Link z prehrajto.cz alebo tuu.to</label>
       <div style="position:relative;">
-        <input type="url" id="url" placeholder="https://prehrajto.cz/..." oninput="onUrlInput()" style="padding-right:44px;" />
+        <input type="url" id="url" placeholder="https://prehrajto.cz/... alebo https://tuu.to/serialy/..." oninput="onUrlInput()" style="padding-right:44px;" />
         <span id="url-spinner" style="position:absolute;right:14px;top:50%;transform:translateY(-50%);font-size:13px;color:var(--muted);display:none;">⏳</span>
       </div>
     </div>
@@ -749,6 +749,7 @@
         </div>
         <div class="field" style="display:flex;align-items:flex-end;">
           <button id="search-eps-btn" class="search-eps-btn" onclick="searchEpisodes()">🔎 Hľadať epizódy</button>
+          <button id="tuu-eps-btn" class="search-eps-btn" onclick="searchTuuEpisodes()" style="display:none;background:linear-gradient(135deg,#7c6af7,#5b4fd4);">📡 Načítaj z tuu.to</button>
         </div>
       </div>
     </div>
@@ -870,6 +871,20 @@ function onUrlInput() {
   clearTimeout(urlTimer);
   const url = document.getElementById('url').value.trim();
   if (!url.startsWith('http')) return;
+
+  // tuu.to show URL (no episode slug) → show tuu.to button
+  const tuuShow = url.match(/tuu\.to\/serialy\/([^/?#]+)\/?$/);
+  const tuuEp   = url.match(/tuu\.to\/serialy\/([^/?#]+)\/([^/?#]+)/);
+  const isTuu   = tuuShow || tuuEp;
+  document.getElementById('tuu-eps-btn').style.display    = (isTuu && mediaType === 'serial') ? '' : 'none';
+  document.getElementById('search-eps-btn').style.display = isTuu ? 'none' : '';
+
+  if (tuuShow) {
+    // It's a show page — just switch to serial mode, don't fetch title
+    setType('serial');
+    return;
+  }
+
   urlTimer = setTimeout(() => fetchTitle(url), 600);
 }
 
@@ -1291,6 +1306,81 @@ async function deleteJob(id) {
 // ── EPISODE SEARCH ────────────────────────────────────────────────────────────
 let foundEpisodes = [];
 
+async function searchTuuEpisodes() {
+  const urlVal = document.getElementById('url').value.trim();
+  const btn    = document.getElementById('tuu-eps-btn');
+
+  // Extract show slug from URL (show page or episode page)
+  const m = urlVal.match(/tuu\.to\/serialy\/([^/?#]+)/);
+  if (!m) { toast('Zadaj tuu.to URL seriálu', 'error'); return; }
+  const showSlug = m[1];
+
+  btn.disabled = true;
+  btn.textContent = '⏳ Načítavam...';
+
+  try {
+    const res  = await fetch(`${API}/tuu-episodes?show=${encodeURIComponent(showSlug)}`);
+    const data = await res.json();
+
+    if (data.error) { toast('❌ ' + data.error, 'error'); return; }
+
+    const season = document.getElementById('season').value;
+    const lang   = document.getElementById('lang-pref').value;
+
+    // Map tuu.to episodes to foundEpisodes format
+    const eps = (data.episodes || []).filter(e => String(e.season) === String(season));
+    if (!eps.length) {
+      toast(`Sezóna ${season} nebola nájdená na tuu.to (skús inú)`, 'error');
+      return;
+    }
+
+    foundEpisodes = eps.map(e => ({
+      url:      e.tuu_url,
+      episode:  e.episode,
+      ep_name:  e.name || '',
+      lang:     lang === 'sk' ? 'sk-dub' : lang === 'cz' ? 'cz-dub' : 'unknown',
+      title:    e.name || '',
+      isTuu:    true,
+    }));
+
+    renderTuuEpisodes(foundEpisodes, data.show_slug);
+    if (!foundEpisodes.length) toast('Žiadne epizódy', 'error');
+  } catch(e) {
+    toast('❌ Chyba: ' + e.message, 'error');
+  }
+
+  btn.disabled = false;
+  btn.textContent = '📡 Načítaj z tuu.to';
+}
+
+function renderTuuEpisodes(episodes, showSlug) {
+  const panel  = document.getElementById('ep-panel');
+  const list   = document.getElementById('ep-list');
+  const ptitle = document.getElementById('ep-panel-title');
+  const warning = document.getElementById('ep-warning');
+
+  if (!episodes.length) { panel.style.display = 'none'; return; }
+
+  panel.style.display = '';
+  ptitle.textContent  = `tuu.to — ${episodes.length} epizód`;
+  warning.style.display = 'none';
+
+  const lang = document.getElementById('lang-pref').value;
+  const langLabel = lang === 'sk' ? 'SK Dab' : lang === 'cz' ? 'CZ Dab' : 'Orig';
+  const langCls   = lang === 'sk' ? 'lb-sk-dub' : lang === 'cz' ? 'lb-cz-dub' : 'lb-unknown';
+
+  list.innerHTML = episodes.map((ep, i) => {
+    const epLabel = ep.episode ? `E${String(ep.episode).padStart(2,'0')}` : `#${i+1}`;
+    const name    = ep.ep_name ? ` – ${esc(ep.ep_name)}` : '';
+    return `<div class="ep-item">
+      <span class="ep-num">${epLabel}</span>
+      <span class="ep-ttl">${epLabel}${name}</span>
+      <span class="lang-badge ${langCls}">${langLabel}</span>
+      <button class="ep-dl-btn" onclick="downloadEp(${i})">⬇</button>
+    </div>`;
+  }).join('');
+}
+
 async function searchEpisodes() {
   const title = document.getElementById('title').value.trim();
   if (!title) { toast('Zadaj názov seriálu!', 'error'); return; }
@@ -1381,11 +1471,13 @@ async function downloadAllEpisodes() {
 }
 
 async function startDownloadEp(url, title, season, episodeNum, epName) {
+  const lang = document.getElementById('lang-pref').value;
+  const langPref = lang === 'sk' ? 'sk-dub' : lang === 'cz' ? 'cz-dub' : 'any';
   try {
     const res = await fetch(API + '/download', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url, title, season, episode_num: episodeNum, ep_name: epName || '', type: 'serial' })
+      body: JSON.stringify({ url, title, season, episode_num: episodeNum, ep_name: epName || '', type: 'serial', lang_pref: langPref })
     });
     const data = await res.json();
     return data;
