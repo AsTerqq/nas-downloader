@@ -77,7 +77,7 @@ def detect_audio_language(url):
             return ""
 
 
-VERSION = "4.6"
+VERSION = "4.7"
 
 MOVIES_PATH   = os.environ.get("MOVIES_PATH", "/data/films")
 SERIES_PATH   = os.environ.get("SERIES_PATH", "/data/series")
@@ -227,9 +227,34 @@ def build_output_path(media_type, title, year=None, season=None, quality=""):
 def run_download(job_id, url, output_path, media_type, title, year, season, episode_num=None, ep_name=""):
     """Enqueue download — worker thread picks it up in FIFO order (max 3 parallel)."""
     def _execute():
+        nonlocal url
         with jobs_lock:
             jobs[job_id]["status"] = "running"
-            jobs[job_id]["log"] = ["🔍 Zisťujem kvalitu..."]
+            jobs[job_id]["log"] = ["🔍 Zisťujem zdroj..."]
+
+        # Auto-resolve tuu.to episode URLs → voe.sx/netu/dood
+        tuu_m = re.match(r'https?://tuu\.to/serialy/([^/?#]+)/([^/?#]+)', url)
+        if tuu_m:
+            with jobs_lock:
+                jobs[job_id]["log"].append("🔗 Rozbalujem tuu.to URL...")
+            lang_pref = "sk-dub" if "sk" in (jobs[job_id].get("lang_pref") or "sk") else "cz-dub"
+            resolved, src_info = resolve_tuu_url(tuu_m.group(1), tuu_m.group(2), lang_pref)
+            if resolved:
+                url = resolved
+                audio = src_info.get("audio", "")
+                subs = src_info.get("subs", "")
+                label = audio + (f" + titulky {subs}" if subs else "")
+                with jobs_lock:
+                    jobs[job_id]["log"].append(f"✅ Zdroj: {label}")
+            else:
+                with jobs_lock:
+                    jobs[job_id]["status"] = "error"
+                    jobs[job_id]["log"].append("❌ Nepodarilo sa rozbalit tuu.to URL — skúste iný player")
+                _save_history()
+                return
+
+        with jobs_lock:
+            jobs[job_id]["log"].append("🔍 Zisťujem kvalitu...")
 
         op = output_path
         h = get_height(url)
@@ -569,6 +594,140 @@ def find_episodes(title, season, lang_pref="any"):
     return best
 
 
+def resolve_tuu_url(show_slug, ep_slug, lang_pref="sk-dub"):
+    """
+    Convert tuu.to show+episode slugs → direct voe.sx/netu/dood URL.
+    Chain: tuu.to API → base64 protect_link → govoyra GET → govoyra POST → player data-href → base64 → URL
+    Returns (video_url, source_info_dict) or (None, None).
+    """
+    import urllib.request as _ureq, urllib.parse as _uparse, base64 as _b64
+
+    _hdr = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Referer": "https://tuu.to/",
+        "Accept": "*/*",
+    }
+
+    def _fetch(url, post_data=None, extra=None):
+        h = dict(_hdr)
+        if extra:
+            h.update(extra)
+        req = _ureq.Request(url, data=post_data, headers=h)
+        return _ureq.urlopen(req, timeout=15).read().decode("utf-8", errors="replace")
+
+    def _pick_source(sources, pref):
+        # pref: "sk-dub" | "cz-dub" | "any"
+        for s in sources:
+            pt = s.get("pretty_type", {})
+            if pref == "sk-dub" and pt.get("has_dub") and pt.get("audio", "").upper() in ("SK", "SL"):
+                return s
+        for s in sources:
+            pt = s.get("pretty_type", {})
+            if pref == "cz-dub" and pt.get("has_dub") and pt.get("audio", "").upper() in ("CZ", "CS", "ČJ"):
+                return s
+        # fallback: any dub, then first
+        for s in sources:
+            if s.get("pretty_type", {}).get("has_dub"):
+                return s
+        return sources[0] if sources else None
+
+    for player in ["voe", "netu", "dood"]:
+        try:
+            # 1. tuu.to API → sources with protect_link
+            raw = _fetch(f"https://api.tuu.to/api/v1/tv-shows/{show_slug}/episode/{ep_slug}?player={player}")
+            data = json.loads(raw)
+            sources = data.get("sources", [])
+            if not sources:
+                print(f"[tuu] {player}: no sources", flush=True)
+                continue
+
+            src = _pick_source(sources, lang_pref)
+            if not src:
+                continue
+            protect_link = src.get("protect_link", "")
+            if not protect_link:
+                continue
+
+            # 2. base64 decode → https://watch.govoyra.com/?data=HASH
+            padding = 4 - len(protect_link) % 4
+            govoyra_get_url = _b64.b64decode(protect_link + "=" * padding).decode("utf-8", errors="replace")
+            print(f"[tuu] govoyra GET: {govoyra_get_url[:80]}", flush=True)
+
+            # 3. GET govoyra → HTML form (auto-submits to POST)
+            html = _fetch(govoyra_get_url)
+            fm = re.search(r'name="data"\s+value="([^"]+)"', html)
+            if not fm:
+                print(f"[tuu] {player}: no form data in govoyra GET response", flush=True)
+                continue
+
+            # 4. POST to govoyra → player HTML with change_player links
+            post_body = _uparse.urlencode({"data": fm.group(1)}).encode()
+            html2 = _fetch(
+                "https://watch.govoyra.com/",
+                post_data=post_body,
+                extra={"Content-Type": "application/x-www-form-urlencoded"}
+            )
+
+            # 5. Parse data-href from change_player link (base64 → actual URL)
+            pm = re.search(r'class="change_player\s+' + re.escape(player) + r'[^"]*"\s+data-href="([^"]+)"', html2)
+            if pm:
+                enc = pm.group(1)
+                enc += "=" * (4 - len(enc) % 4)
+                video_url = _b64.b64decode(enc).decode("utf-8", errors="replace").rstrip("?").rstrip("&")
+                print(f"[tuu] resolved → {video_url}", flush=True)
+                return video_url, src.get("pretty_type", {})
+
+            print(f"[tuu] {player}: change_player link not found in govoyra response", flush=True)
+        except Exception as e:
+            print(f"[tuu] {player} error: {e}", flush=True)
+
+    return None, None
+
+
+def tuu_episode_list(show_slug):
+    """
+    Fetch episode list for a show from tuu.to API.
+    Returns list of {season, episode, slug, name, tuu_url} or [].
+    """
+    import urllib.request as _ureq
+    try:
+        req = _ureq.Request(
+            f"https://api.tuu.to/api/v1/tv-shows/{show_slug}",
+            headers={"User-Agent": "Mozilla/5.0", "Referer": "https://tuu.to/"}
+        )
+        data = json.loads(_ureq.urlopen(req, timeout=12).read())
+        episodes = []
+        show_data = data.get("data", data)
+        for season_obj in show_data.get("seasons", []):
+            s_num = int(season_obj.get("season_number") or season_obj.get("number") or 1)
+            for ep in season_obj.get("episodes", []):
+                e_num = int(ep.get("episode_number") or ep.get("number") or 0)
+                slug = ep.get("slug") or f"s{s_num:02d}e{e_num:02d}"
+                # slug from API might be "s01e01" already or "S01E01" — normalise
+                slug = slug.lower()
+                episodes.append({
+                    "season": s_num,
+                    "episode": e_num,
+                    "slug": slug,
+                    "name": ep.get("name") or ep.get("title") or f"Epizóda {e_num}",
+                    "tuu_url": f"https://tuu.to/serialy/{show_slug}/{slug}",
+                })
+        if not episodes:
+            # fallback: parse from episode_count if available
+            total = int(show_data.get("episode_count") or show_data.get("episodes_count") or 0)
+            if total:
+                episodes = [{
+                    "season": 1, "episode": i,
+                    "slug": f"s01e{i:02d}",
+                    "name": f"Epizóda {i}",
+                    "tuu_url": f"https://tuu.to/serialy/{show_slug}/s01e{i:02d}"
+                } for i in range(1, total + 1)]
+        return episodes
+    except Exception as e:
+        print(f"[tuu] episode_list error: {e}", flush=True)
+        return []
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         pass  # ticho
@@ -767,6 +926,19 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 self.send_json({"results": [], "error": str(e)})
 
+        elif path == "/tuu-episodes":
+            qs = parse_qs(parsed.query)
+            show_slug = qs.get("show", [""])[0].strip()
+            if not show_slug:
+                self.send_json({"error": "No show slug"}, 400)
+                return
+            # Allow full URL: https://tuu.to/serialy/sen-cal-kapimi
+            m_slug = re.search(r'tuu\.to/serialy/([^/?#]+)', show_slug)
+            if m_slug:
+                show_slug = m_slug.group(1)
+            episodes = tuu_episode_list(show_slug)
+            self.send_json({"episodes": episodes, "show_slug": show_slug})
+
         elif path == "/search-episodes":
             qs = parse_qs(parsed.query)
             ep_title  = qs.get("title",  [""])[0]
@@ -894,6 +1066,7 @@ class Handler(BaseHTTPRequestHandler):
             year       = data.get("year", "").strip()
             season     = data.get("season", "1").strip()
             episode_num = data.get("episode_num", None)
+            lang_pref  = data.get("lang_pref", "sk-dub").strip()  # for tuu.to resolving
 
             if not url:
                 self.send_json({"error": "URL je prázdna"}, 400)
@@ -949,7 +1122,8 @@ class Handler(BaseHTTPRequestHandler):
                     "series_key": series_key,
                     "progress": 0,
                     "log": ["⏳ Čakám vo fronte..."],
-                    "output_path": output_path
+                    "output_path": output_path,
+                    "lang_pref": lang_pref
                 }
 
             run_download(job_id, url, output_path, media_type, title, year, season, episode_num, ep_name)
