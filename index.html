@@ -691,7 +691,7 @@
     <div class="field">
       <label id="url-label">Link z prehrajto.cz alebo tuu.to</label>
       <div style="position:relative;">
-        <input type="url" id="url" placeholder="https://prehrajto.cz/... alebo https://tuu.to/serialy/..." oninput="onUrlInput()" style="padding-right:44px;" />
+        <input type="url" id="url" placeholder="https://prehrajto.cz/... alebo https://tuu.to/tv-shows/..." oninput="onUrlInput()" style="padding-right:44px;" />
         <span id="url-spinner" style="position:absolute;right:14px;top:50%;transform:translateY(-50%);font-size:13px;color:var(--muted);display:none;">⏳</span>
       </div>
     </div>
@@ -873,8 +873,8 @@ function onUrlInput() {
   if (!url.startsWith('http')) return;
 
   // tuu.to show URL (no episode slug) → show tuu.to button
-  const tuuShow = url.match(/tuu\.to\/serialy\/([^/?#]+)\/?$/);
-  const tuuEp   = url.match(/tuu\.to\/serialy\/([^/?#]+)\/([^/?#]+)/);
+  const tuuShow = url.match(/tuu\.to\/(?:serialy|tv-shows)\/([^/?#]+)\/?$/);
+  const tuuEp   = url.match(/tuu\.to\/(?:serialy|tv-shows)\/([^/?#]+)\/([^/?#]+)/);
   const isTuu   = tuuShow || tuuEp;
   document.getElementById('tuu-eps-btn').style.display    = (isTuu && mediaType === 'serial') ? '' : 'none';
   document.getElementById('search-eps-btn').style.display = isTuu ? 'none' : '';

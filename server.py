@@ -77,7 +77,7 @@ def detect_audio_language(url):
             return ""
 
 
-VERSION = "4.9"
+VERSION = "4.10"
 
 MOVIES_PATH   = os.environ.get("MOVIES_PATH", "/data/films")
 SERIES_PATH   = os.environ.get("SERIES_PATH", "/data/series")
@@ -233,7 +233,7 @@ def run_download(job_id, url, output_path, media_type, title, year, season, epis
             jobs[job_id]["log"] = ["🔍 Zisťujem zdroj..."]
 
         # Auto-resolve tuu.to episode URLs → voe.sx/netu/dood
-        tuu_m = re.match(r'https?://tuu\.to/serialy/([^/?#]+)/([^/?#]+)', url)
+        tuu_m = re.match(r'https?://tuu\.to/(?:serialy|tv-shows)/([^/?#]+)/([^/?#]+)', url)
         if tuu_m:
             with jobs_lock:
                 jobs[job_id]["log"].append("🔗 Rozbalujem tuu.to URL...")
@@ -706,7 +706,7 @@ def tuu_episode_list(show_slug):
     Fetch episode list for a show from tuu.to API.
     Returns list of {season, episode, slug, name, tuu_url} or [].
     """
-    import urllib.request as _ureq, urllib.parse as _uparse
+    import urllib.request as _ureq
     _hdr = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
         "Referer": "https://tuu.to/",
@@ -716,90 +716,64 @@ def tuu_episode_list(show_slug):
     def _get(url):
         req = _ureq.Request(url, headers=_hdr)
         raw = _ureq.urlopen(req, timeout=12).read()
-        print(f"[tuu] GET {url} → {len(raw)}B, first 800: {raw[:800]}", flush=True)
-        return json.loads(raw)
+        parsed = json.loads(raw)
+        d = parsed.get("data", parsed)
+        keys = list(d.keys()) if isinstance(d, dict) else f"list[{len(d)}]"
+        print(f"[tuu] GET {url} → {len(raw)}B, keys={keys}", flush=True)
+        return parsed
 
-    def _parse_episodes(data_list, default_season=1):
-        eps = []
-        for ep in data_list:
-            s_num = int(ep.get("season_number") or ep.get("season") or default_season)
-            e_num = int(ep.get("episode_number") or ep.get("episode") or ep.get("number") or 0)
-            if not e_num:
-                continue
-            slug = f"s{s_num:02d}e{e_num:02d}"
-            eps.append({
-                "season": s_num,
-                "episode": e_num,
-                "slug": slug,
-                "name": ep.get("name") or ep.get("title") or f"Epizóda {e_num}",
-                "tuu_url": f"https://tuu.to/serialy/{show_slug}/{slug}",
-            })
-        return eps
+    def _make_ep(s_num, e_num, name, show_slug):
+        slug = f"s{s_num:02d}e{e_num:02d}"
+        return {
+            "season": s_num, "episode": e_num, "slug": slug,
+            "name": name or f"Epizóda {e_num}",
+            "tuu_url": f"https://tuu.to/tv-shows/{show_slug}/{slug}",
+        }
 
     episodes = []
 
     try:
-        # Endpoint 1: show detail (may include seasons with episodes)
+        # Endpoint 1: show detail — 41KB response should have seasons inside
         data = _get(f"https://api.tuu.to/api/v1/tv-shows/{show_slug}")
         show_data = data.get("data", data)
+        print(f"[tuu] show_data keys: {list(show_data.keys())}", flush=True)
 
         for season_obj in show_data.get("seasons", []):
             s_num = int(season_obj.get("season_number") or season_obj.get("number") or 1)
-            for ep in season_obj.get("episodes", []):
+            ep_list = season_obj.get("episodes", [])
+            print(f"[tuu] season {s_num}: {len(ep_list)} episodes", flush=True)
+            for ep in ep_list:
                 e_num = int(ep.get("episode_number") or ep.get("number") or 0)
                 if not e_num:
                     continue
-                slug = f"s{s_num:02d}e{e_num:02d}"
-                episodes.append({
-                    "season": s_num, "episode": e_num, "slug": slug,
-                    "name": ep.get("name") or ep.get("title") or f"Epizóda {e_num}",
-                    "tuu_url": f"https://tuu.to/serialy/{show_slug}/{slug}",
-                })
+                episodes.append(_make_ep(s_num, e_num, ep.get("name") or ep.get("title"), show_slug))
+
         if not episodes:
-            episodes = _parse_episodes(show_data.get("episodes", []))
+            for ep in show_data.get("episodes", []):
+                s_num = int(ep.get("season_number") or ep.get("season") or 1)
+                e_num = int(ep.get("episode_number") or ep.get("episode") or ep.get("number") or 0)
+                if e_num:
+                    episodes.append(_make_ep(s_num, e_num, ep.get("name") or ep.get("title"), show_slug))
     except Exception as e:
         print(f"[tuu] show endpoint error: {e}", flush=True)
 
-    # Endpoint 2: /seasons endpoint
+    # Endpoint 2: /tv-shows/{slug}/season/{n}
     if not episodes:
-        try:
-            data2 = _get(f"https://api.tuu.to/api/v1/tv-shows/{show_slug}/seasons")
-            seasons = data2.get("data", data2) if isinstance(data2.get("data"), list) else []
-            if not isinstance(seasons, list):
-                seasons = []
-            for season_obj in seasons:
-                s_num = int(season_obj.get("season_number") or season_obj.get("number") or 1)
-                for ep in season_obj.get("episodes", []):
-                    e_num = int(ep.get("episode_number") or ep.get("number") or 0)
-                    if not e_num:
-                        continue
-                    slug = f"s{s_num:02d}e{e_num:02d}"
-                    episodes.append({
-                        "season": s_num, "episode": e_num, "slug": slug,
-                        "name": ep.get("name") or ep.get("title") or f"Epizóda {e_num}",
-                        "tuu_url": f"https://tuu.to/serialy/{show_slug}/{slug}",
-                    })
-        except Exception as e:
-            print(f"[tuu] seasons endpoint error: {e}", flush=True)
-
-    # Endpoint 3: /episodes?slug=...&season=1 (query-param style seen in DevTools)
-    if not episodes:
-        try:
-            for season_num in range(1, 5):
-                url3 = f"https://api.tuu.to/api/v1/episodes?slug={_uparse.quote(show_slug)}&season={season_num}"
-                try:
-                    data3 = _get(url3)
-                    ep_list = data3.get("data", data3)
-                    if not isinstance(ep_list, list):
-                        ep_list = ep_list.get("episodes", []) if isinstance(ep_list, dict) else []
-                    parsed = _parse_episodes(ep_list, default_season=season_num)
-                    if not parsed:
-                        break
-                    episodes.extend(parsed)
-                except Exception:
+        for s_num in range(1, 5):
+            try:
+                data2 = _get(f"https://api.tuu.to/api/v1/tv-shows/{show_slug}/season/{s_num}")
+                d2 = data2.get("data", data2)
+                ep_list2 = d2.get("episodes", []) if isinstance(d2, dict) else (d2 if isinstance(d2, list) else [])
+                print(f"[tuu] season/{s_num}: {len(ep_list2)} episodes", flush=True)
+                if not ep_list2:
                     break
-        except Exception as e:
-            print(f"[tuu] episodes endpoint error: {e}", flush=True)
+                for ep in ep_list2:
+                    e_num = int(ep.get("episode_number") or ep.get("number") or 0)
+                    if e_num:
+                        episodes.append(_make_ep(s_num, e_num, ep.get("name") or ep.get("title"), show_slug))
+            except Exception as e2:
+                print(f"[tuu] season/{s_num} error: {e2}", flush=True)
+                break
 
     print(f"[tuu] episode_list found {len(episodes)} episodes", flush=True)
     return episodes
