@@ -77,7 +77,7 @@ def detect_audio_language(url):
             return ""
 
 
-VERSION = "4.10"
+VERSION = "4.11"
 
 MOVIES_PATH   = os.environ.get("MOVIES_PATH", "/data/films")
 SERIES_PATH   = os.environ.get("SERIES_PATH", "/data/series")
@@ -742,8 +742,10 @@ def tuu_episode_list(show_slug):
             s_num = int(season_obj.get("season_number") or season_obj.get("number") or 1)
             ep_list = season_obj.get("episodes", [])
             print(f"[tuu] season {s_num}: {len(ep_list)} episodes", flush=True)
+            if ep_list:
+                print(f"[tuu] first ep keys: {list(ep_list[0].keys())}", flush=True)
             for ep in ep_list:
-                e_num = int(ep.get("episode_number") or ep.get("number") or 0)
+                e_num = int(ep.get("episode_number") or ep.get("episode") or ep.get("ep_num") or ep.get("number") or ep.get("position") or ep.get("order") or 0)
                 if not e_num:
                     continue
                 episodes.append(_make_ep(s_num, e_num, ep.get("name") or ep.get("title"), show_slug))
