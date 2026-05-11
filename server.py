@@ -631,55 +631,72 @@ def resolve_tuu_url(show_slug, ep_slug, lang_pref="sk-dub"):
                 return s
         return sources[0] if sources else None
 
+    def _b64d(s):
+        return _b64.b64decode(s + "=" * ((4 - len(s) % 4) % 4)).decode("utf-8", errors="replace")
+
     for player in ["voe", "netu", "dood"]:
         try:
             # 1. tuu.to API → sources with protect_link
-            raw = _fetch(f"https://api.tuu.to/api/v1/tv-shows/{show_slug}/episode/{ep_slug}?player={player}")
+            api_url = f"https://api.tuu.to/api/v1/tv-shows/{show_slug}/episode/{ep_slug}?player={player}"
+            print(f"[tuu] step1 GET {api_url}", flush=True)
+            raw = _fetch(api_url)
+            print(f"[tuu] step1 response len={len(raw)} snippet={raw[:120]}", flush=True)
             data = json.loads(raw)
             sources = data.get("sources", [])
             if not sources:
-                print(f"[tuu] {player}: no sources", flush=True)
+                print(f"[tuu] {player}: no sources. keys={list(data.keys())}", flush=True)
                 continue
 
             src = _pick_source(sources, lang_pref)
             if not src:
+                print(f"[tuu] {player}: no matching source", flush=True)
                 continue
             protect_link = src.get("protect_link", "")
             if not protect_link:
+                print(f"[tuu] {player}: empty protect_link", flush=True)
                 continue
 
             # 2. base64 decode → https://watch.govoyra.com/?data=HASH
-            padding = 4 - len(protect_link) % 4
-            govoyra_get_url = _b64.b64decode(protect_link + "=" * padding).decode("utf-8", errors="replace")
-            print(f"[tuu] govoyra GET: {govoyra_get_url[:80]}", flush=True)
+            govoyra_get_url = _b64d(protect_link)
+            print(f"[tuu] step2 govoyra GET: {govoyra_get_url[:100]}", flush=True)
 
             # 3. GET govoyra → HTML form (auto-submits to POST)
             html = _fetch(govoyra_get_url)
-            fm = re.search(r'name="data"\s+value="([^"]+)"', html)
+            print(f"[tuu] step3 govoyra GET response len={len(html)} snippet={html[:200]}", flush=True)
+            # form: <input type="hidden" name="data" value="..."> (attr order may vary)
+            fm = re.search(r'name=["\']data["\']\s+value=["\']([^"\']+)["\']', html)
             if not fm:
-                print(f"[tuu] {player}: no form data in govoyra GET response", flush=True)
+                fm = re.search(r'value=["\']([^"\']{20,})["\'][^>]*name=["\']data["\']', html)
+            if not fm:
+                print(f"[tuu] {player}: no form data field in govoyra response", flush=True)
                 continue
 
             # 4. POST to govoyra → player HTML with change_player links
             post_body = _uparse.urlencode({"data": fm.group(1)}).encode()
+            print(f"[tuu] step4 POST govoyra data len={len(fm.group(1))}", flush=True)
             html2 = _fetch(
                 "https://watch.govoyra.com/",
                 post_data=post_body,
                 extra={"Content-Type": "application/x-www-form-urlencoded"}
             )
+            print(f"[tuu] step4 POST response len={len(html2)} snippet={html2[:300]}", flush=True)
 
             # 5. Parse data-href from change_player link (base64 → actual URL)
-            pm = re.search(r'class="change_player\s+' + re.escape(player) + r'[^"]*"\s+data-href="([^"]+)"', html2)
+            # Try both attribute orders
+            pm = re.search(r'data-href=["\']([^"\']+)["\'][^>]*class=["\'][^"\']*change_player[^"\']*' + re.escape(player), html2)
+            if not pm:
+                pm = re.search(r'class=["\'][^"\']*change_player[^"\']*' + re.escape(player) + r'[^"\']*["\'][^>]*data-href=["\']([^"\']+)["\']', html2)
             if pm:
-                enc = pm.group(1)
-                enc += "=" * (4 - len(enc) % 4)
-                video_url = _b64.b64decode(enc).decode("utf-8", errors="replace").rstrip("?").rstrip("&")
+                video_url = _b64d(pm.group(1)).rstrip("?").rstrip("&")
                 print(f"[tuu] resolved → {video_url}", flush=True)
                 return video_url, src.get("pretty_type", {})
 
-            print(f"[tuu] {player}: change_player link not found in govoyra response", flush=True)
+            print(f"[tuu] {player}: change_player link not found. Searching all data-href...", flush=True)
+            all_hrefs = re.findall(r'data-href=["\']([^"\']+)["\']', html2)
+            print(f"[tuu] all data-href values: {all_hrefs}", flush=True)
         except Exception as e:
-            print(f"[tuu] {player} error: {e}", flush=True)
+            import traceback
+            print(f"[tuu] {player} error: {e}\n{traceback.format_exc()}", flush=True)
 
     return None, None
 
