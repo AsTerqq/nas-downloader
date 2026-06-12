@@ -77,12 +77,12 @@ def detect_audio_language(url):
             return ""
 
 
-VERSION = "4.11"
+VERSION = "4.12"
 
 MOVIES_PATH   = os.environ.get("MOVIES_PATH", "/data/films")
 SERIES_PATH   = os.environ.get("SERIES_PATH", "/data/series")
 YTDLP_PATH    = "yt-dlp"
-TMDB_API_KEY  = "0130bf38e3b81e1adb7d0f6e9107da9a"
+TMDB_API_KEY  = os.environ.get("TMDB_API_KEY", "0130bf38e3b81e1adb7d0f6e9107da9a")
 GITHUB_RAW    = "https://raw.githubusercontent.com/AsTerqq/nas-downloader/main/server.py"
 GITHUB_ZIP    = "https://github.com/AsTerqq/nas-downloader/archive/refs/heads/main.zip"
 
@@ -237,7 +237,7 @@ def run_download(job_id, url, output_path, media_type, title, year, season, epis
         if tuu_m:
             with jobs_lock:
                 jobs[job_id]["log"].append("🔗 Rozbalujem tuu.to URL...")
-            lang_pref = "sk-dub" if "sk" in (jobs[job_id].get("lang_pref") or "sk") else "cz-dub"
+            lang_pref = "sk-dub" if "sk" in (jobs[job_id].get("lang_pref") or "cz") else "cz-dub"
             resolved, src_info = resolve_tuu_url(tuu_m.group(1), tuu_m.group(2), lang_pref)
             if resolved:
                 url = resolved
@@ -298,12 +298,16 @@ def run_download(job_id, url, output_path, media_type, title, year, season, epis
                         break
                     jobs[job_id]["log"].append(f"🔄 Retry {attempt}/2...")
                 _time.sleep(5 * attempt)
+            proc = None
             try:
                 proc = subprocess.Popen(
                     cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                     text=True, encoding="utf-8", errors="replace"
                 )
                 with jobs_lock:
+                    if jobs[job_id]["status"] == "cancelled":
+                        proc.kill()
+                        break
                     jobs[job_id]["_proc"] = proc
 
                 for line in proc.stdout:
@@ -312,7 +316,11 @@ def run_download(job_id, url, output_path, media_type, title, year, season, epis
                         if jobs[job_id]["status"] == "cancelled":
                             break
                         jobs[job_id]["log"].append(line)
-                        m = re.search(r'(\d+\.?\d*)%', line)
+                        # drž log max ~400 riadkov, inak žerie RAM a spomaľuje UI
+                        if len(jobs[job_id]["log"]) > 400:
+                            del jobs[job_id]["log"][:200]
+                        m = (re.search(r'\[download\]\s+(\d+(?:\.\d+)?)%', line)
+                             or re.search(r'\((\d+(?:\.\d+)?)%\)', line))
                         if m:
                             jobs[job_id]["progress"] = float(m.group(1))
 
@@ -329,7 +337,13 @@ def run_download(job_id, url, output_path, media_type, title, year, season, epis
                 _save_history()
                 return
             except Exception as e:
+                if proc is not None and proc.poll() is None:
+                    try:
+                        proc.kill()
+                    except Exception:
+                        pass
                 with jobs_lock:
+                    jobs[job_id]["_proc"] = None
                     jobs[job_id]["log"].append(f"⚠️ Pokus {attempt+1} zlyhal: {str(e)}")
                 last_rc = -1
 
@@ -372,6 +386,12 @@ def find_episodes(title, season, lang_pref="any"):
         if m: return int(m.group(1)), int(m.group(2))
         m = re.search(r'\b(\d{1,2})[xX](\d{1,3})\b', text)
         if m: return int(m.group(1)), int(m.group(2))
+        # CZ/SK formáty: "3. díl", "díl 3", "epizoda 5", "5 dil" (bez čísla série)
+        t = norm(text)
+        m = re.search(r'\b0*(\d{1,3})\s*\.?\s*(?:dil|cast|epizoda)\b', t)
+        if m: return None, int(m.group(1))
+        m = re.search(r'\b(?:dil|cast|epizoda|episode)\s*\.?\s*0*(\d{1,3})\b', t)
+        if m: return None, int(m.group(1))
         return None, None
 
     def strip_tags(s):
@@ -392,7 +412,8 @@ def find_episodes(title, season, lang_pref="any"):
         """
         try:
             html = fetch(f"https://html.duckduckgo.com/html/?q={uparse.quote('site:prehrajto.cz ' + query)}")
-        except Exception:
+        except Exception as e:
+            print(f"[search] DDG zlyhal: {e}", flush=True)
             return []
 
         pairs = []
@@ -412,6 +433,8 @@ def find_episodes(title, season, lang_pref="any"):
             if not display:
                 display = url.rstrip('/').split('/')[-1].replace('-', ' ')
             pairs.append((url, display))
+        if not pairs and ('captcha' in html.lower() or 'anomaly' in html.lower()):
+            print("[search] DDG vrátil CAPTCHA — výsledky dočasne nedostupné", flush=True)
         return pairs
 
     def direct_search(query):
@@ -468,18 +491,19 @@ def find_episodes(title, season, lang_pref="any"):
                 continue
         return all_pairs
 
-    # CZ translation
+    # CZ translation — len ak názov vyzerá anglicky (diakritika = už je CZ/SK)
     cz_title = None
-    try:
-        with ureq.urlopen(
-            f"https://api.mymemory.translated.net/get?q={uparse.quote(title)}&langpair=en|cs",
-            timeout=5
-        ) as r:
-            cz_title = json.loads(r.read()).get("responseData", {}).get("translatedText", "")
-        if cz_title and norm(cz_title) == norm(title):
-            cz_title = None
-    except Exception:
-        pass
+    if norm(title) == title.lower():
+        try:
+            with ureq.urlopen(
+                f"https://api.mymemory.translated.net/get?q={uparse.quote(title)}&langpair=en|cs",
+                timeout=5
+            ) as r:
+                cz_title = json.loads(r.read()).get("responseData", {}).get("translatedText", "")
+            if cz_title and norm(cz_title) == norm(title):
+                cz_title = None
+        except Exception:
+            pass
 
     lang_order = {
         'cz':  ['cz-dub', 'cz-sub', 'sk-dub', 'sk-sub', 'dub', 'sub', 'unknown'],
