@@ -77,7 +77,7 @@ def detect_audio_language(url):
             return ""
 
 
-VERSION = "4.12"
+VERSION = "4.13"
 
 MOVIES_PATH   = os.environ.get("MOVIES_PATH", "/data/films")
 SERIES_PATH   = os.environ.get("SERIES_PATH", "/data/series")
@@ -323,6 +323,17 @@ def run_download(job_id, url, output_path, media_type, title, year, season, epis
                              or re.search(r'\((\d+(?:\.\d+)?)%\)', line))
                         if m:
                             jobs[job_id]["progress"] = float(m.group(1))
+                        # rýchlosť + ETA (aria2c: "DL:9.2MiB ETA:1h4m", yt-dlp: "at 5.2MiB/s ETA 01:23")
+                        sp = re.search(r'DL:([\d.]+[KMGT]?i?B)', line)
+                        if sp:
+                            jobs[job_id]["speed"] = sp.group(1) + "/s"
+                        else:
+                            sp = re.search(r'at\s+([\d.]+[KMGT]?i?B/s)', line)
+                            if sp:
+                                jobs[job_id]["speed"] = sp.group(1)
+                        et = re.search(r'ETA[:\s]+([\dhms:]+)', line)
+                        if et:
+                            jobs[job_id]["eta"] = et.group(1)
 
                 proc.wait()
                 last_rc = proc.returncode
@@ -1102,6 +1113,8 @@ class Handler(BaseHTTPRequestHandler):
                         "title": j.get("title", ""),
                         "series_key": j.get("series_key", j.get("title", "")),
                         "progress": j.get("progress", 0),
+                        "speed": j.get("speed", ""),
+                        "eta": j.get("eta", ""),
                         "output_path": j.get("output_path", "")
                     }
                     for jid, j in jobs.items()
@@ -1143,7 +1156,7 @@ class Handler(BaseHTTPRequestHandler):
             year       = data.get("year", "").strip()
             season     = data.get("season", "1").strip()
             episode_num = data.get("episode_num", None)
-            lang_pref  = data.get("lang_pref", "sk-dub").strip()  # for tuu.to resolving
+            lang_pref  = data.get("lang_pref", "cz-dub").strip()  # for tuu.to resolving
 
             if not url:
                 self.send_json({"error": "URL je prázdna"}, 400)

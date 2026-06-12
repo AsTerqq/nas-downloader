@@ -172,7 +172,7 @@
     color: var(--muted);
     margin-bottom: 8px;
   }
-  input[type="text"], input[type="url"], select {
+  input[type="text"], input[type="url"], input[type="number"], input[type="password"], select {
     width: 100%;
     background: var(--surface2);
     border: 1px solid var(--border);
@@ -297,6 +297,20 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+  .job-meta {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--muted);
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .ep-check {
+    accent-color: var(--accent);
+    width: 14px;
+    height: 14px;
+    cursor: pointer;
+    flex-shrink: 0;
   }
   .job-badge {
     font-size: 10px;
@@ -719,18 +733,7 @@
       <div class="row-2">
         <div class="field">
           <label>Séria (Season)</label>
-          <select id="season" onchange="updatePreview()">
-            <option value="1">Season 1</option>
-            <option value="2">Season 2</option>
-            <option value="3">Season 3</option>
-            <option value="4">Season 4</option>
-            <option value="5">Season 5</option>
-            <option value="6">Season 6</option>
-            <option value="7">Season 7</option>
-            <option value="8">Season 8</option>
-            <option value="9">Season 9</option>
-            <option value="10">Season 10</option>
-          </select>
+          <input type="number" id="season" min="1" max="99" value="1" oninput="updatePreview()" />
         </div>
         <div class="field">
           <label>Epizóda (voliteľné)</label>
@@ -761,7 +764,7 @@
     <div id="ep-panel" style="display:none;margin-top:16px;">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
         <span id="ep-panel-title" style="font-size:11px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);"></span>
-        <button onclick="downloadAllEpisodes()" style="background:var(--accent);color:#0a0a0f;border:none;border-radius:8px;padding:7px 14px;font-family:'Syne',sans-serif;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap;">⬇ Stiahnuť všetky</button>
+        <button id="dl-all-btn" onclick="downloadAllEpisodes()" style="background:var(--accent);color:#0a0a0f;border:none;border-radius:8px;padding:7px 14px;font-family:'Syne',sans-serif;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap;">⬇ Stiahnuť všetky</button>
       </div>
       <div id="ep-warning" style="display:none;background:rgba(255,179,71,0.1);border:1px solid rgba(255,179,71,0.3);border-radius:8px;padding:10px 14px;margin-bottom:10px;font-size:12px;color:var(--warn);">⚠️ Nájdené iba verzie s titulkami – dabing nebol nájdený</div>
       <div id="ep-list" style="max-height:280px;overflow-y:auto;background:var(--surface2);border:1px solid var(--border);border-radius:10px;"></div>
@@ -800,7 +803,6 @@
 const API = window.location.origin;
 let mediaType = 'film';
 let jobsData = {};
-let pollInterval = null;
 let openLogs = new Set();
 let cfg = { movies_path: '/volume1/films', series_path: '/volume1/movies' };
 
@@ -961,7 +963,7 @@ function onTitleInput() {
     const s = detectSeason(title);
     if (s) {
       const sel = document.getElementById('season');
-      if (sel && s >= 1 && s <= 10) sel.value = String(s);
+      if (sel && s >= 1 && s <= 99) sel.value = String(s);
     }
   }
   updatePreview();
@@ -1004,6 +1006,11 @@ async function startDownload() {
   const title = document.getElementById('title').value.trim();
   const year  = document.getElementById('year')?.value.trim() || '';
   const season = document.getElementById('season')?.value || '1';
+  const epRaw  = document.getElementById('episode')?.value.trim() || '';
+  const epM    = epRaw.match(/(\d{1,3})\s*$/);
+  const episodeNum = (mediaType === 'serial' && epM) ? parseInt(epM[1]) : null;
+  const lang = document.getElementById('lang-pref')?.value || 'cz';
+  const langPref = lang === 'sk' ? 'sk-dub' : lang === 'cz' ? 'cz-dub' : 'any';
 
   if (!url) { toast('Vlož link!', 'error'); return; }
   if (!title) { toast('Zadaj názov!', 'error'); return; }
@@ -1016,10 +1023,12 @@ async function startDownload() {
     const res = await fetch(API + '/download', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url, title, year, season, type: mediaType })
+      body: JSON.stringify({ url, title, year, season, episode_num: episodeNum, type: mediaType, lang_pref: langPref })
     });
     const data = await res.json();
-    if (data.job_id) {
+    if (data.skipped) {
+      toast('⏭ Táto epizóda už je stiahnutá', '');
+    } else if (data.job_id) {
       toast('✅ Sťahovanie spustené!', 'success');
       document.getElementById('url').value = '';
       startPolling();
@@ -1036,10 +1045,7 @@ async function startDownload() {
 
 // ── POLLING ───────────────────────────────────────────────────────────────────
 function startPolling() {
-  if (!pollInterval) {
-    pollInterval = setInterval(fetchJobs, 1500);
-    fetchJobs();
-  }
+  fetchJobs();
 }
 
 async function fetchJobs() {
@@ -1048,13 +1054,6 @@ async function fetchJobs() {
     const data = await res.json();
     jobsData = data;
     renderJobs();
-
-    // zastaviť polling ak nič nebieži
-    const anyRunning = Object.values(data).some(j => j.status === 'running' || j.status === 'pending');
-    if (!anyRunning && pollInterval) {
-      clearInterval(pollInterval);
-      pollInterval = null;
-    }
   } catch {}
 }
 
@@ -1074,25 +1073,44 @@ function renderJobs() {
   // sort by numeric job ID so E01→E02→... order is preserved
   activeIds.sort((a, b) => parseInt(a) - parseInt(b));
 
-  container.innerHTML = activeIds.map(id => {
-    const j = jobsData[id];
-    const emoji = j.status === 'running' ? '⏳' : '🕐';
-    return `<div class="job-item ${j.status}" id="job-${id}">
-      <div class="job-header">
-        <span class="job-status">${emoji}</span>
-        <span class="job-title">${esc(j.title)}</span>
-        <span class="job-badge badge-${j.status}">${j.status}</span>
-        <button class="job-action-btn stop" onclick="jobAction('${id}')" title="Zastaviť">⏹</button>
-      </div>
-      <div class="job-path">📁 ${esc(j.output_path)}</div>
-      <div class="progress-wrap"><div class="progress-bar" style="width:${j.progress||0}%"></div></div>
-      <button class="log-toggle" onclick="toggleLog('${id}')">▶ zobraziť log</button>
-      <div class="log-box${openLogs.has(id)?' show':''}" id="log-${id}"></div>
-    </div>`;
-  }).join('');
+  // DOM sa prestavia len keď sa zmení zoznam/status jobov — inak len update hodnôt (žiadne blikanie logu)
+  const activeSig = activeIds.map(id => id + ':' + jobsData[id].status).join('|');
+  if (container.dataset.sig !== activeSig) {
+    container.dataset.sig = activeSig;
+    container.innerHTML = activeIds.map(id => {
+      const j = jobsData[id];
+      const emoji = j.status === 'running' ? '⏳' : '🕐';
+      return `<div class="job-item ${j.status}" id="job-${id}">
+        <div class="job-header">
+          <span class="job-status">${emoji}</span>
+          <span class="job-title">${esc(j.title)}</span>
+          <span class="job-meta"></span>
+          <span class="job-badge badge-${j.status}">${j.status}</span>
+          <button class="job-action-btn stop" onclick="jobAction('${id}')" title="Zastaviť">⏹</button>
+        </div>
+        <div class="job-path">📁 ${esc(j.output_path)}</div>
+        <div class="progress-wrap"><div class="progress-bar" style="width:${j.progress||0}%"></div></div>
+        <button class="log-toggle" onclick="toggleLog('${id}')">${openLogs.has(id) ? '▼ skryť log' : '▶ zobraziť log'}</button>
+        <div class="log-box${openLogs.has(id)?' show':''}" id="log-${id}"></div>
+      </div>`;
+    }).join('');
+  }
 
   activeIds.forEach(id => {
     const j = jobsData[id];
+    const item = document.getElementById(`job-${id}`);
+    if (item) {
+      const bar = item.querySelector('.progress-bar');
+      if (bar) bar.style.width = (j.progress || 0) + '%';
+      const meta = item.querySelector('.job-meta');
+      if (meta) meta.textContent = [
+        j.progress ? Math.round(j.progress) + ' %' : '',
+        j.speed || '',
+        j.eta ? 'ETA ' + j.eta : ''
+      ].filter(Boolean).join(' · ');
+      const pathEl = item.querySelector('.job-path');
+      if (pathEl) pathEl.textContent = '📁 ' + (j.output_path || '');
+    }
     if (openLogs.has(id) || j.status === 'running') fetchLog(id);
   });
 
@@ -1110,16 +1128,19 @@ function renderJobs() {
     groups[key].push({ id, ...j });
   });
 
-  // rebuild history (full re-render on change)
-  const currentKeys = new Set([...histList.querySelectorAll('.series-group')].map(el => el.dataset.key));
-  const newKeys = new Set(Object.keys(groups));
-  const changed = currentKeys.size !== newKeys.size || [...newKeys].some(k => !currentKeys.has(k));
-  if (!changed) return;
+  // re-render len pri zmene (vrátane statusov epizód), otvorené skupiny zostanú otvorené
+  const histSig = doneIds.slice().sort((a,b) => parseInt(a) - parseInt(b))
+    .map(id => id + ':' + jobsData[id].status).join('|');
+  if (histList.dataset.sig === histSig) return;
+  histList.dataset.sig = histSig;
+  const openKeys = new Set([...histList.querySelectorAll('.series-episodes.open')]
+    .map(el => el.closest('.series-group')?.dataset.key).filter(Boolean));
 
   histList.innerHTML = Object.entries(groups).map(([key, eps]) => {
     const done  = eps.filter(e => e.status === 'done').length;
     const error = eps.filter(e => e.status === 'error').length;
     const stat  = `${done} ✅${error ? ' ' + error + ' ❌' : ''}`;
+    const isOpen = openKeys.has(key);
     const epRows = eps.sort((a,b) => (a.title > b.title ? 1 : -1)).map(e => {
       const ico = e.status === 'done' ? '✅' : e.status === 'error' ? '❌' : '⚠️';
       return `<div class="hist-ep">
@@ -1128,15 +1149,14 @@ function renderJobs() {
         <span class="hist-ep-status">${ico}</span>
       </div>`;
     }).join('');
-    const safeKey = CSS.escape(key);
     return `<div class="series-group" data-key="${esc(key)}">
       <div class="series-header" onclick="toggleSeriesGroup(this)">
-        <span class="series-toggle">▶</span>
+        <span class="series-toggle${isOpen ? ' open' : ''}">▶</span>
         <span class="series-name">📺 ${esc(key)}</span>
         <span class="series-stats">${stat}</span>
-        <button class="series-clear" onclick="event.stopPropagation();clearSeries('${esc(key)}')" title="Vymazať zo histórie">🗑</button>
+        <button class="series-clear" onclick="event.stopPropagation();clearSeries(this)" title="Vymazať zo histórie">🗑</button>
       </div>
-      <div class="series-episodes">${epRows}</div>
+      <div class="series-episodes${isOpen ? ' open' : ''}">${epRows}</div>
     </div>`;
   }).join('');
 }
@@ -1148,12 +1168,16 @@ function toggleSeriesGroup(header) {
   toggle.classList.toggle('open', isOpen);
 }
 
-async function clearSeries(key) {
+async function clearSeries(btn) {
+  const key = btn.closest('.series-group')?.dataset.key;
+  if (!key) return;
+  if (!confirm(`Vymazať „${key}" z histórie?`)) return;
   await fetch(`${API}/clear-history?key=${encodeURIComponent(key)}`);
   await fetchJobs();
 }
-// test
+
 async function clearAllHistory() {
+  if (!confirm('Naozaj vymazať celú históriu?')) return;
   await fetch(`${API}/clear-history`);
   await fetchJobs();
 }
@@ -1173,16 +1197,20 @@ async function fetchLog(id) {
 function toggleLog(id) {
   const box = document.getElementById(`log-${id}`);
   box.classList.toggle('show');
+  const btn = box.previousElementSibling;
   if (box.classList.contains('show')) {
     openLogs.add(id);
+    if (btn) btn.textContent = '▼ skryť log';
     fetchLog(id);
   } else {
     openLogs.delete(id);
+    if (btn) btn.textContent = '▶ zobraziť log';
   }
 }
 
 function esc(s) {
-  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 
 // ── TOAST ─────────────────────────────────────────────────────────────────────
@@ -1216,7 +1244,7 @@ function openRebuildModal() {
   const s = JSON.parse(localStorage.getItem('dsm') || '{}');
   document.getElementById('dsm-port').value = s.port || '5001';
   document.getElementById('dsm-user').value = s.user || '';
-  document.getElementById('dsm-pass').value = s.pass || '';
+  document.getElementById('dsm-pass').value = '';
   document.getElementById('rebuild-modal').classList.remove('hidden');
 }
 
@@ -1230,7 +1258,8 @@ async function triggerRebuild() {
   const pass = document.getElementById('dsm-pass').value;
   if (!user || !pass) { toast('Zadaj prihlasovacie údaje', 'error'); return; }
 
-  localStorage.setItem('dsm', JSON.stringify({ port, user, pass }));
+  // heslo sa neukladá — localStorage je čitateľný pre kohokoľvek pri počítači
+  localStorage.setItem('dsm', JSON.stringify({ port, user }));
 
   const btn = document.getElementById('rebuild-go-btn');
   btn.disabled = true;
@@ -1311,7 +1340,7 @@ async function searchTuuEpisodes() {
   const btn    = document.getElementById('tuu-eps-btn');
 
   // Extract show slug from URL (show page or episode page)
-  const m = urlVal.match(/tuu\.to\/serialy\/([^/?#]+)/);
+  const m = urlVal.match(/tuu\.to\/(?:serialy|tv-shows)\/([^/?#]+)/);
   if (!m) { toast('Zadaj tuu.to URL seriálu', 'error'); return; }
   const showSlug = m[1];
 
@@ -1373,12 +1402,14 @@ function renderTuuEpisodes(episodes, showSlug) {
     const epLabel = ep.episode ? `E${String(ep.episode).padStart(2,'0')}` : `#${i+1}`;
     const name    = ep.ep_name ? ` – ${esc(ep.ep_name)}` : '';
     return `<div class="ep-item">
+      <input type="checkbox" class="ep-check" data-idx="${i}" checked onchange="updateSelCount()">
       <span class="ep-num">${epLabel}</span>
       <span class="ep-ttl">${epLabel}${name}</span>
       <span class="lang-badge ${langCls}">${langLabel}</span>
       <button class="ep-dl-btn" onclick="downloadEp(${i})">⬇</button>
     </div>`;
   }).join('');
+  updateSelCount();
 }
 
 async function searchEpisodes() {
@@ -1434,12 +1465,21 @@ function renderEpisodes(episodes, langPref) {
       ? `<button id="lang-badge-${i}" class="lang-badge lb-unknown" onclick="detectLang(${i})" title="Kliknúť = zistiť jazyk z metadát" style="cursor:pointer;border:none;font-family:inherit;text-decoration:underline dotted;">?</button>`
       : `<span id="lang-badge-${i}" class="lang-badge ${badgeCls(ep.lang)}">${badgeTxt(ep.lang)}</span>`;
     return `<div class="ep-item">
+      <input type="checkbox" class="ep-check" data-idx="${i}" checked onchange="updateSelCount()">
       <span class="ep-num">${epLabel}</span>
       <span class="ep-ttl" title="${esc(ep.title)}">${epLabel}${epName}</span>
       ${langEl}${altBadge}
       <button class="ep-dl-btn" onclick="downloadEp(${i})">⬇</button>
     </div>`;
   }).join('');
+  updateSelCount();
+}
+
+function updateSelCount() {
+  const total = document.querySelectorAll('#ep-list .ep-check').length;
+  const sel   = document.querySelectorAll('#ep-list .ep-check:checked').length;
+  const btn   = document.getElementById('dl-all-btn');
+  if (btn) btn.textContent = sel === total ? '⬇ Stiahnuť všetky' : `⬇ Stiahnuť vybrané (${sel})`;
 }
 
 function downloadEp(idx) {
@@ -1454,10 +1494,16 @@ function downloadEp(idx) {
 
 async function downloadAllEpisodes() {
   if (!foundEpisodes.length) return;
+  const checkedIdx = [...document.querySelectorAll('#ep-list .ep-check:checked')]
+    .map(el => parseInt(el.dataset.idx));
+  const selected = checkedIdx.length
+    ? checkedIdx.map(i => foundEpisodes[i]).filter(Boolean)
+    : [];
+  if (!selected.length) { toast('Nie je vybraná žiadna epizóda', 'error'); return; }
   const title  = document.getElementById('title').value.trim();
   const season = document.getElementById('season').value;
   let started = 0, skipped = 0;
-  for (const ep of foundEpisodes) {
+  for (const ep of selected) {
     const data = await startDownloadEp(ep.url, title, season, ep.episode, ep.ep_name);
     if (data && data.skipped) skipped++;
     else started++;
@@ -1520,7 +1566,7 @@ loadConfig().then(() => { setType('film'); updatePreview(); });
 checkUpdate();
 setInterval(checkUpdate, 5 * 60 * 1000);
 fetchJobs();
-setInterval(fetchJobs, 5000);
+setInterval(fetchJobs, 3000);
 </script>
 </body>
 </html>
